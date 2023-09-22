@@ -1,0 +1,131 @@
+%appendix
+
+\appendix 
+\section{Modification of Simulation used in \cite{Zhang_Zhao_Tubbs_2011} }\label{sec: Appendix A}
+%\input{Scaling_parameter_simulation}
+
+\cite{Balakrishnan_Nevzorov} derived the true AUC for two treatment groups with standard extreme value error terms. A similar derivation is followed to derive the true AUC when both treatment groups have extreme value distributions with the same scale parameter, $\lambda.$ Let
+\begin{eqnarray*}
+Y_1 &=& -\frac{1}{\lambda}\log(U_1) + m_1 \cdot x \\
+Y_2 &=& -\frac{1}{\lambda}\log(U_2) + m_0 + (m_1+m_2) \cdot x,
+\end{eqnarray*}
+where
+\begin{eqnarray*}
+U_1 \sim \text{exp}(1), \quad U_2 \sim \text{exp}(1).
+\end{eqnarray*}
+We are interested in
+\begin{eqnarray*}
+\auc(x) &=& P[Y_1 < Y_2] \\
+&=& P[ 1/\lambda \log(U_2) - 1/\lambda \log(U_1) < m_0 + m_2 \cdot x] \\
+&=& P[ V <  m_0 + m_2 \cdot x ] \\
+&=& F_V(m_0 + m_2 \cdot x).
+\end{eqnarray*}
+
+In order to find the CDF of V, let $V_1= -1/\lambda \log(U_1).$ Then, $U_1 = \exp(-\lambda V_1).$ It follows that the pdf of $V_1$ is
+\begin{equation}
+f_{V_1}(v_1) = \exp\{- \exp(-\lambda v_1)\}\cdot \lambda \exp\{- \lambda v_1\} =  \lambda \exp\{- \exp(-\lambda v_1) - \lambda v_1)\},
+\end{equation}
+where $-\infty < V_1 < \infty$ with $\text{E}(V_1) = 0.57722/\lambda$ and $\text{Var}(V_1)=  \pi^{2}/(6 \cdot \lambda^2).$ The cdf of $V_1$ is
+\begin{equation}
+F_{V_1}[v_1] = P[V_1 < v_1] = \int_{- \infty} ^ {v_1}   \lambda \exp\{-\lambda \exp(-x) - x)\} \, dx = \exp \{ -\exp (-\lambda v_1).
+\end{equation}
+Similarly, let $V_2 = -1/\lambda \log(U_2).$ The pdf and cdf of $V_2$ is the same as $V_1.$
+We are interested in the distribution of $V = V_1 - V_2$ where $-\infty < V < \infty.$ Define the bivariate transformation
+\begin{equation}
+V = V_1 - V_2 \quad \text{and} \quad W = V_2.
+\end{equation}
+That is, $V_1 = V + W$ and $V_2 = W$ with a Jacobian of 1 and $-\infty < V < \infty$ and $-\infty < W < \infty.$
+We have that
+\begin{eqnarray*}
+f_{V_1, V_2}(v_1, v_2) &= \lambda \exp\{- \exp(-\lambda v_1) - \lambda v_1)\} \cdot \lambda \exp\{- \exp(- \lambda v_2) - \lambda v_2)\}\\
+\end{eqnarray*}
+The CDF of $V$ is derived as follows
+\begin{eqnarray*}
+F_V(v) &=& \int_{-\infty}^{v} f_v(x) \; dx \\
+&=& \int_{-\infty}^{v} \int_{-\infty}^{\infty} f_{V_1, V_2}(x + w, w) \;dw\, dx \\
+&=&  \int_{-\infty}^{\infty}\int_{-\infty}^{v} f_{V_1, V_2}(x + w, w) \;dx\, dw \\
+&=&  \int_{-\infty}^{\infty} F_{V_1}(v + w)  dF(w) \\
+&=&  \int_{-\infty}^{\infty} \exp \{ -\exp [-\lambda(v +w)] \} \cdot \lambda \exp\{- \exp(- \lambda w) - \lambda w \} \; dw \\
+&=&  \int_{-\infty}^{\infty} \lambda \exp \{- \exp [- \lambda w] \cdot [1+ \exp  (- \lambda v )] \} \cdot \exp \{ - \lambda w \}  \; dw \\
+&=&  \int_{0}^{\infty} \exp \{-u \cdot[1+\exp(- \lambda v)]\}   \; du \\  
+&=& \frac{\exp \{ -u[1+\exp(- \lambda v)]\}}{[1+\exp(- \lambda v)]} \Big|_{0}^{\infty} \\
+&=& 0 - (-\frac{1}{[1+\exp(- \lambda v)]}) \\
+&=& \frac{1}{[1+\exp(- \lambda v)]} \\
+\end{eqnarray*}
+which is
+$$V \sim \text{Logistic} \left( 0, \frac{\pi^{2}}{3*\lambda^2} \right).$$
+
+%This simulation set up was used for the Ingelheim diabetes clinical trial.
+ %and the RESTORE and VIVID trials. 
+ As an example, suppose that the standard deviation for a treatment group is 132.29. Then the $\lambda$ needed to adjust the standard error of the error structures to fit the standard deviation from the summary statistics is obtained  as 
+
+ %to adjust the standard error of the error structures to fit the standard deviation from the summary statistics of laser treatment group in the RESTORE trial,
+% {\color{red} Can you change the example for the Ingelheim diabetes clinical trial?}
+ % we have to find the scaling parameter $\lambda$. The standard deviation for this group is 132.29. 
+\begin{eqnarray*}
+\sqrt{\frac{\pi^{2}}{6*\lambda^2}} = 132.29 \implies \lambda = \sqrt{\frac{\pi^{2}}{6*(132.29)^2}} = 0.0097.
+\end{eqnarray*}
+
+%++++++++++++++++++++++++++++++
+\section{Competing Methods found in \cite{jan_shieh} and \cite{Shirley}}
+\label{sec: Appendix B}
+Two existing nonparametric multiple comparison procedures are used as reference for the proposed methods. A brief description of these methods is given.
+%\subsection{Shirley's Method \cite {Shirley}}
+%\input{shirley_mc}
+%shirley_mc
+\subsection{Shirley's Multiple Comparison (shi)} \label{shi}
+\citep{Shirley}  considered the problem of determining differences in treatment groups that are created by increasing dosage levels of an active compound as compared with a zero-dose control group. The test is a nonparametric version of a parametric procedure given by \cite{Williams}. 
+
+Suppose there are $K$  treatment levels (increasing dosage levels of an active drug) and a zero-dose control group (group 0). \cite{Williams} proposed a procedure based upon the maximum likelihood estimates of the location parameters, $M_i$, subject to the constraint that $M_1 \leq M_2 \leq ... \leq M_K$. The statistic is
+$$ t_K=\frac{\hat{M}_K - X_0}{\left(S^2/r_K + S^2/c\right)^{-1/2}}  $$
+where $S^2$ is an estimate of the residual variance, $c=r_0$ is the number of observations in the control group and $X_0$ is the control group sample mean. \cite{Williams} provided tables for the critical points for $t_K.$ 
+
+\citep{Shirley} developed a nonparametric version of the Williams test by analyzing the observed ranks instead of the actual data. The results were based on the Wald-Wolfowitz  limit theorem (\cite{wald_1944}), where the vector $\bar{R}=\left(\bar{R}_0, \bar{R}_1, ...\bar{R}_K\right)$ has a limiting multivariate normal distribution and $\bar{R}_i$ is the mean rank of group $i$. The Shirley multiple comparison test is as follows. For equal group sizes, let 
+\begin{equation} \label{sheq1}
+t = C_{N,K} ~ \left[\underset{1 \leq u \leq K}{\max} \sum_{j=u}^{K} \bar{R}_j (K-u+1)-R_0\right]
+\end{equation}
+where $C_{N,K} = \left[(K+1)(N+1)/6\right]^{1/2}$ and $N$ is the total sample size. The distribution of $t$ can be approximated by the distribution of $t_K$ when $\nu = \infty$. If the sample sizes are unequal or there are  a considerable number of ties in the data, the statistic becomes
+\begin{equation} \label{sheq2}
+t = C_{N,K} ~ \left[\underset{1 \leq u \leq K}{\max} \left( \sum_{j=u}^{K} r_j \bar{R}_j /\sum_{j=u}^{K} r_j \right) - \bar{R}_0 \right] 
+\end{equation}
+where $C_{N,K} = [(N(N+1)/12)(1/r_K + 1/C)]^{1/2}.$ The Shirley multiple comparison test compare each treatment level to the zero-dose control group using either equation (\ref{sheq1}) or (\ref{sheq2}) and the critical points given by \cite{Williams}.
+
+%\subsection{Jan and Shien Method \cite{jan_shieh}}
+%\input{janshieh}
+\subsection{Jan and Shieh's Multiple Comparison (js)}\label{js}
+
+
+\cite{jan_shieh} propose a step-down closed testing procedure based on contrasts of the Kruskal-Wallis test to identify the MED. 
+
+The pairwise contrasts are defined within for each of $K+1$ increasing dose levels. Let $Y_{ij}$ denote the response for treatment $i$ and subject $j$. When comparing the $i^{th}$ treatment group to the control group, let $R_{sj}^{(i)}$ denote the rank of $Y_{sj}$ observation within the combination of the first $i$ treatment groups with the control group for $i = 1, \hdots, K$, $s = 0, \hdots, i$, and $j = 1, \hdots, n$. Let $R_{s}^{(i)} = \sum_{j=1}^n R_{sj}^{(i)}$ denote the sum of ranks for the $s^{th}$ dose level. % where $i=1, \hdots, K$, $s=0,1, \hdots, i$ and $j=1, \hdots, n.$ 
+A pairwise contrast is defined as $P_i = R_i^{(i)} - R_0^{(i)}$
+for $i=1, \hdots, K.$ The proposed statistic to compare the $i^{th}$ dose level to the control is defined as
+\begin{equation}\label{eq: js statistic}
+Z_i = \frac{P_i}{\sqrt{Var(P_i)}}
+\end{equation}
+where the null variance of $P_i$ is given by $\text{Var}(P_i) = nN_i(N_i+1)/6$ with $N_i = (i+1)n.$ In the presence of ties, the null variance is adjusted by replacing $N_i+1$ with $N_i + 1 - \sum_{j=1}^{g}t_j(t_j^2-1)/[N_i(N_i-1)].$ Let $\mathbf{Z} = (Z_1, \hdots, Z_{K})'.$ If the global hypothesis hold, then $\mathbf{Z} \sim N_K(\mathbf{0}, \mathbf{R})$ where $\mathbf{R}$ is given by 
+$$\mathbf{R} = \begin{bmatrix}
+1 & & 1/2 \\
+& \ddots & \\
+1/2 & & 1
+\end{bmatrix}. $$
+
+The MED can be found using the step-down closed testing scheme suggested by \cite{Tamhane}. Let $Z_{i, \rho = 0.5} ^{\alpha}$ denote the upper $\alpha^{th}$ percentile of the multivariate normal distribution with zero mean vector and correlation $\rho = 0.5$. The critical values for $Z_{i, \rho = 0.5} ^{0.05}$ as reproduced from \cite{tamhane_hochberg_1987} are given in Table \ref{tab: js critical values}. %distribution of $Z_{(i)} = \text{max}(JP_1, \hdots, JP_{K})$ for correlation $\rho.$
+Let $k_1=K$ and $Z_{(k_1)} = \text{max}(Z_1, \hdots, Z_K).$ Define $d(k_1)$ as the antirank of $Z_{(k_1)}$. That is, $Z_{(k_1)} = Z_{d(k_1)}.$ If $Z_{(k_1)} > Z_{k_1, \rho}^{\alpha}$ then $H_{0i}$ is rejected for $i = d(k_1), \hdots, k_1$. %If $H_{0i}$ is rejected at step 1, let $k_2 = d(k_1)-1.$ 
+At the $j^{th}$ step, let $k_j = d(k_{j-1}) -1.$ If $Z_{d(k_j)} > Z_{k_j, \rho=0.5}^{\alpha},$ then reject $H_{0i}$ for $i=d_{k_j}, \hdots, k_j$; otherwise stop testing. When the testing stops at the $m^{th}$ step, then the MED is $k_m+1$.
+
+
+%\singlespacing
+\begin{table}[H] \centering 
+  \caption{Critical Values for Jan and Shieh Procedure.} 
+  \label{tab: js critical values} 
+\begin{tabular}{@{\extracolsep{5pt}}  lccccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+i & 1 & 2 & 3 & 4 & 5 \\
+\hline \\[-1.8ex] 
+$Z_{i, \rho = 0.05}^{0.05}$ &  1.645 & 1.92 & 2.06 & 2.16 & 2.23 \\
+\hline \\[-1.8ex] 
+\end{tabular} 
+\end{table} 
+%\doublespacing
