@@ -1,0 +1,1324 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{pdfpages} 
+\lstset{language=R,
+    basicstyle=\small\ttfamily,
+    stringstyle=\color{ForestGreen},
+    otherkeywords={0,1,2,3,4,5,6,7,8,9,},
+    morekeywords={TRUE,FALSE},
+    deletekeywords={data,frame,length,as,character},
+    keywordstyle=\color{blue},
+    commentstyle=\color{ForestGreen},
+}
+
+\newcommand{\ga}{\gamma}
+\newcommand{\be}{\beta}
+\newcommand{\si}{\sigma}
+\renewcommand{\l}{\left}
+\renewcommand{\r}{\right}
+\setlength{\parindent}{0pt}
+
+\title{ROC Regression Methods}
+\author{katiexfrank }
+\date{August 2019}
+
+\begin{document}
+
+\maketitle
+
+{\Large \textbf{Update 12/18/19}}
+
+\vskip .1in
+
+I've run a simulation to look into modeling the placement values using beta regression with the logit link on $\mu$ and the log link on the precision parameter $\phi$. By modeling both location and dispersion parameters with their own distinct sets of predictors one can model heteroskedasticity in the data, which occurs when the values are centered near one of the boundaries of the unit interval. The paper ``A Better Lemon Squeezer? Maximum-Likelihood Regression with Beta-Distributed Dependent Variables'' by Michael Smithson and Jay Verkuilen goes more in depth on this. I'm still trying to fully grasp their paper, but I think that explicitly modeling the dispersion parameter could be a viable idea because we've seen that the placement values tend to pile up near 1 in the case where two populations are well separated by the biomarker/diagnostic test under consideration.
+
+\vskip .1in
+
+I've only simulated data under the scenario below but am going to look at another scenario tomorrow/Friday. I've also spent some time looking at how the three methods compare on the South African Heart Disease data set, but I need to work out a couple of things before I write something up.
+
+\vskip .1in
+
+{\large\textbf{1. Simulate binormal data}}
+
+\vspace{.05in}
+
+Scenario 1 (normal distributions with minimal separation):
+
+\vspace{-.1in}
+
+\begin{itemize}
+    \item[] $Y_1 = 2 + 4X + \varepsilon_1$
+    \item[] $Y_0 = 1.5 + 3X + \varepsilon_0$
+\end{itemize}
+
+\vskip .1in
+
+where in this scenario, $X$ is generated from $U(0,1)$ and $\varepsilon_1$ and $\varepsilon_0$ are generated from $N(0, 1.5^2)$. For the simulation, we generate 1,000 data sets with $n_1, n_0 = 200$. For each data set, the covariate-adjusted ROC is calculated. Also, the number of FPFs considered is $n_T = 50$, so $t = \{1/50, \dots, 49/50\}.$
+
+\vskip .1in
+
+To determine the difference between the estimator of the covariate-specific ROC curve and the true ROC curve, I calculate the MSE, which is defined in the 2011 paper as
+
+$$\text{MSE} = \frac{1}{n_X}\sum_{l = 0}^{n_X}\frac{1}{n_T}\sum_{r=0}^{n_T}\l(\widehat{\text{ROC}}_{X=x_{l}}(t_r) - \text{ROC}_{X=x_{l}}(t_r)\r)^2,$$
+
+where $x_l = \frac{1}{n_x}, l = 0, \dots, n_x, t_r = \frac{r}{n_T}, r = 0, \dots, n_T,$ and $n_X = n_T = 50.$
+
+\vskip .1in
+
+Though the method of modeling the dispersion (``Beta Phi'') has the highest median MSE, all three are very similar.
+
+\includegraphics[width=3.5in]{Beta(Katie)/mse_three.pdf}
+
+\vskip .1in
+
+Below are boxplots of the 1,000 AUCs computed for each method. Red denotes the true AUC for the binormal data generation mechanism. The PDF method is least biased followed by the Beta Phi method and then the Beta method.
+
+\includegraphics[width=3.5in]{Beta(Katie)/AUC_three.pdf}
+
+Scenario 2 (normal distributions with considerable separation):
+
+\vspace{-.1in}
+
+\begin{itemize}
+    \item[] $Y_1 = 3 + 6X + \varepsilon_1$
+    \item[] $Y_0 = 1.5 + 3X + \varepsilon_0$
+\end{itemize}
+
+\vskip .1in
+
+where in this scenario, $X$ is generated from $U(0,1)$ and $\varepsilon_1$ and $\varepsilon_0$ are generated from $N(0, 1.5^2)$. For the simulation, we generate 1,000 data sets with $n_1, n_0 = 200$. For each data set, the covariate-adjusted ROC is calculated. Also, the number of FPFs considered is $n_T = 50$, so $t = \{1/50, \dots, 49/50\}.$
+
+\vskip .1in
+
+All of the medians are similar for the three methods. The PDF's and the Beta Phi's are somewhat smaller than the Beta's.
+
+\includegraphics[width=3.5in]{Beta(Katie)/mse_three_scen2.pdf}
+
+\vskip .1in
+
+Below are boxplots of the 1,000 AUCs computed for each method. Red denotes the true AUC for the binormal data generation mechanism. The PDF method is least biased followed by the Beta Phi method and then the Beta method. The Beta method seems to overestimate the AUC.
+
+\includegraphics[width=3.5in]{Beta(Katie)/AUC_three_scen2.pdf}
+
+
+\newpage
+
+{\Large \textbf{Update 10/9/19}}
+
+\vskip .1in
+
+I created a data generating scenario similar to the one you described on the white board last week. Here,
+
+$$Y_0 \sim Z_1I_{(0,.2)}(U) + Z_2I_{[.2,1)}(U)$$
+
+$$Y_1 \sim Z_2I_{[.2,1)}(U) + Z_3I_{(0,.2)}(U),$$
+
+where
+
+$$U\sim \text{U}(0,1)$$
+$$Z_1 \sim \text{N}(4, .5)$$
+$$Z_1 \sim \text{N}(7,1)$$
+$$Z_3 \sim \text{N}(10,.5)$$
+
+\includegraphics[width=3.5in]{Beta(Katie)/not_binormal.pdf}
+
+\textbf{No Covariates Scenario}
+
+\vskip .1in
+
+I generated one data set where $n_0, n_1 = 500$. Of the 500 placement values, 105 of them were 0s.
+
+\vskip .1in
+
+\includegraphics[width=3.5in]{Beta(Katie)/not_normal_samp.pdf}
+
+\vskip .1in
+
+\includegraphics[width=3.5in]{Beta(Katie)/not_bin_ROC.pdf}
+
+Empirical AUC: 0.691
+
+\textbf{PDF AUC: 0.696} \qquad \textcolor{red}{\textbf{Beta AUC: 0.731}} \qquad \textcolor{blue}{\textbf{Inflated Beta AUC: 0.704}}
+
+\vskip .1in
+
+Notice the sharp feature for the Beta ROC curve close to 0. This is due to about 20$\%$ of the PVs being 0. Also, in the Inflated Beta ROC curve, there is a clear inflection point.
+
+Now, I remove the diseased points that are greater than the max of the control points $+0.5$. Similarly, I remove the control points that are smaller than the min of the diseased points $-0.5$. So, I'm now working with 459 diseased observations and 477 control observations. Of the 459 placement values, 64 of them are 0s.
+
+\vskip .1in
+
+\includegraphics[width=3.5in]{Beta(Katie)/rem_not_bin_ROC.pdf}
+
+\vskip .1in
+
+\includegraphics[width=3.5in]{Beta(Katie)/rem_not_bin_ROC.pdf}
+
+Empirical AUC: 0.648
+
+\textbf{PDF AUC: 0.652} \qquad \textcolor{red}{\textbf{Beta AUC: 0.687}} \qquad \textcolor{blue}{\textbf{Inflated Beta AUC: 0.659}}
+
+\vskip .05in
+
+Unsurprisingly, the AUC decreases. Also, the sharpness around 0 is less noticeable for this Beta curve.
+
+\vskip .1in
+
+\textbf{Covariates Scenario}
+
+\vskip .1in
+
+This generated data set includes the covariate $X$, where $X$ is binary 0/1. First, I generated the data set in the same way as in the no covariate scenario. Then, for the diseased observations, I assigned the covariate value 1 depending on a bernoulli random variable with $p = 0.8$. Likewise, for the control observations, I assigned the covariate value 1 depending on a bernoulli random variable with $p = 0.2$. These are the ROC curves I obtain when $X = 1$. Of the 500 placement values, 88 of them are 0's.
+
+\vskip .1in
+
+\includegraphics[width=3.5in]{Beta(Katie)/rem_cov.pdf}
+
+\textbf{PDF AUC: 0.724} \qquad \textcolor{red}{\textbf{Beta AUC: 0.723}} \qquad \textcolor{blue}{\textbf{Inflated Beta AUC: 0.734}}
+
+\vskip .1in
+
+Now, I remove the diseased points that are greater than the max of the control points $+0.5$. Similarly, I remove the control points that are smaller than the min of the diseased points $-0.5$. So, I'm now working with 459 diseased observations and 477 control observations. Of the 459 placement values, 47 of them are 0s.
+
+\includegraphics[width=3.5in]{Beta(Katie)/rem_cov_act.pdf}
+
+\textbf{PDF AUC: 0.689} \qquad \textcolor{red}{\textbf{Beta AUC: 0.703}} \qquad \textcolor{blue}{\textbf{Inflated Beta AUC: 0.682}}
+
+\vskip .1in
+
+Overall, as far as I can tell, removing some of the extreme points really only makes the Beta ROC curve look less wonky (more smooth). I still think there isn't a place for the inflated Beta distribution for the reason mentioned in my last update.
+
+\newpage
+
+{\Large \textbf{Update 9/29/19}}
+
+\vskip .1in
+
+Over the weekend, as I was working on a simulation and applications to real data for the parametric distribution-free, beta, and inflated beta ROC regression methods, I came to an important realization about the inflated beta method.
+
+Below is a plot of the ROC curves for the SA chd data set. Black is the PDF curve, red is the beta curve, and blue is the inflated beta curve. As you can see, at $t=0$, the inflated beta curve gives positive $\text{ROC}(0)$. This is due to 10 of the 160 placement values being 0. For the other two curves, $\text{ROC}(0) = 0$. 
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/Inf_Beta_wrong.pdf}}
+
+The ROC curve ordinate should start at 0 for $t=0$ and end at 1 for $t=1$ because of how the ROC curve is defined.
+
+$$\text{ROC}(\cdot) = \left\{(\text{FPF}(c), \text{TPF}(c)), c \in (-\infty, \infty) \right\}.$$
+
+$$\lim_{c\to\infty} \text{TPF}(c) = 0 \quad \text{and} \quad \lim_{c\to\infty} \text{FPF}(c) = 0.$$
+
+$$\lim_{c\to-\infty} \text{TPF}(c) = 1 \quad \text{and} \quad \lim_{c\to-\infty} \text{FPF}(c) = 1.$$
+
+Thus, it doesn't make sense to model the placement values using inflated beta regression. So, instead of continuing to investigate inflated beta ROC regression, I'm looking at other possible ROC applications of the beta distribution. If you have any other ideas, I'm definitely open to those as well.
+
+
+\section{Introduction}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% ROC REGRESSION METHODS %%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{ROC Regression methods}
+
+\begin{itemize}
+    \item Parametric distribution-free (PDF) ROC Analysis \href{https://academic.oup.com/biostatistics/article/3/3/421/306628}{(Alonzo and Pepe, 2002)}.
+    \item Beta regression with a transformation if any of the placement values are 0 or 1 (Stanley and Tubbs, 2018).
+    \item Inflated beta regression if any of the placement values are 0 or 1.
+\end{itemize}
+
+%% PARAMETRIC DISTRIBUTION-FREE ROC
+\subsection{Parametric distribution-free ROC}
+
+\begin{enumerate}
+    \item Specify a set of FPFs, $T = \{t\}, t \in (0,1)$.
+    \item Estimate the $t$th covariate specific quantile of the survivor distribution of the reference population: $S_{0, X}^{-1}(t)$ using quantile regression.
+    \item Calculate $U_{it} = I\l[Y_{1i} \geq S_{0, X}^{-1}(t)\r]$ for $i = 1, \dots, n_1$ and $t \in T$.
+    \item Fit the model 
+    \begin{align*}
+        E[U_{it}] &= \text{ROC}_{X, X_1}(t) \\
+            &= g\l(\sum_{k=1}^K \ga_kh_k(t) + \be X_i + \be_1 X_{1i}\r)
+    \end{align*} with the link function $g^{-1}$ and covariates $\{h_k(t), X_i, X_{1i}; k = 1, \dots, K\}$.
+    
+    From here on, I only consider the binormal ROC curve {\color{blue} Proposed by Alonzo and Pepe}:
+    $$\text{ROC}_{X, X_1}(t) = \Phi\l(\ga_1 + \ga_2\Phi^{-1}(t) + \be X + \be_1 X_1 \r).$$
+\end{enumerate}
+
+\textcolor{red}{\textbf{To do - fill in the details.}}
+
+%% BETA ROC
+\subsection{Beta ROC}
+
+\begin{enumerate}
+    \item Specify a set of FPFs, $T = \{t\}, t \in (0,1)$.
+    \item Estimate the $t$th covariate specific quantile of the survivor distribution of the reference population: $S_{0, X}^{-1}(t)$ using quantile regression.
+    \item Calculate the placement values:
+    $$\text{PV}_i = \hat{S}_{0, X_i}(Y_{1i}), i = 1, \dots, n_1.$$
+    \item Perform beta regression on the placement values to obtain estimates of $\be$ and $\phi$.
+    \begin{itemize}
+        \item Even if the two populations aren't well separated, it's likely some of the placement values will be 0s and an even smaller number could be 1s. This is a problem because beta regression assumes the response variable has values in the interval (0, 1). A straightforward solution is to use the transformation $[y \cdot (n - 1) + 0.5]/n$, where $y$ is the response variable and $n$ is the sample size \href{https://pdfs.semanticscholar.org/8517/79099a662b91c8153a9a40e069f0276eecbc.pdf}{(Smithson and Verkuilen, 2006)}.
+    \end{itemize}
+    \item Transform to obtain $a = \mu \phi$ and $b = (1 - \mu)\phi$
+    \item Using the $\text{Beta}(a,b)$ distribution in hand, calculate the cdf of the placement values to obtain the ROC and AUC.
+    \begin{align*}
+        \text{AUC} &= 1 - E[\text{PV}] \\
+            &= 1 - \frac{a}{a + b} \\
+            &= \frac{b}{a+b}
+    \end{align*}
+\end{enumerate}
+
+\textcolor{red}{\textbf{To do - fill in the details.}}
+
+%% INFLATED BETA ROC
+\subsection{Inflated beta ROC {\color{blue} Proposed work for the PPP}}
+
+\begin{enumerate}
+    \item Specify a set of FPFs, $T = \{t\}, t \in (0,1)$.
+    \item Estimate the $t$th covariate specific quantile of the survivor distribution of the reference population: $S_{0, X}^{-1}(t)$ using quantile regression.
+    \item Calculate the placement values:
+    $$\text{PV}_i = \hat{S}_{0, X_i}(Y_{1i}), i = 1, \dots, n_1.$$
+    \item If any of the placement values are 0s or 1s, perform appropriate inflated beta regression on the placement values to obtain estimates of regression coefficients. The \href{https://www.gamlss.com/wp-content/uploads/2018/01/DistributionsForModellingLocationScaleandShape.pdf}{\textsf{gamlss}} package in R can be used to perform inflated beta regression.
+    \begin{itemize}
+        \item \textbf{Beta inflated at 0 distribution}, \texttt{BEINFO}$(\mu, \si, \nu)$
+        \begin{itemize}
+            \item The need for this distribution arises when the placement values include 0s. When the two distributions are well separated, there will be a high number of 0s, but even if they are poorly separated there will likely be some placement values that are 0s.
+            \item This is a discrete-continuous mixture model. The discrete portion is at 0 with probability $p_0$, and there is a continuous beta portion  on the unit interval (0,1) with probability $(1 - p_0)$. 
+            \item The probability density function of the beta inflated at 0 distribution, denoted by \texttt{BEINF0}$(\mu, \si, \nu)$ is
+            $$f_Y(y|\mu, \si, \nu) = \begin{cases}
+            p_0 & \text{if $y = 0$} \\
+            (1 - p_0)\frac{1}{\be(a,b)}y^{a - 1}(1 - y)^{b - 1} & \text{if $0 < y < 1$} \\
+            \end{cases}$$ 
+            for $0 \leq y < 1$, where $a = \mu(1 - \si^2)/\si^2, b = (1 - \mu)(1 - \si^2)/\si^2, p_0 = \nu(1 + \nu)^{-1},$ so $a > 0, b > 0, 0 < p_0 < 1$. Thus \texttt{BEINF0}$(\mu, \si, \nu)$ has parameters $\mu = a/(a+b)$ and $\si = (a + b + 1)^{-1/2}$, and $\nu = p_0/(1 - p_0)$. Hence $0 < \mu < 1, 0 < \si < 1, \nu > 0$. Also, $E[y] = \frac{\mu}{(1 + \nu)}$.
+            \item The default link functions are the logit link for $\mu$ and $\si$ and the log link for $\nu$.
+        \end{itemize}
+        \item \textbf{Inflated beta distribution}, \texttt{BEINF}$(\mu, \si, \nu, \tau)$
+        \begin{itemize}
+            \item The need for this distribution arises when the placement values include 0s and 1s. This occurs when there is considerable overlap between the two distributions.
+            \item This discrete-continuous mixture model is a mixture of three components: a discrete portion at 0 with probability $p_0$, a discrete portion at 1 with probability $p_1$, and a continuous beta portion on the unit interval with probability $(1 - p_0 - p_1)$.
+            \item The probability density function of the inflated beta distribution is 
+            $$f_Y(y|\mu, \si, \nu, \tau) = \begin{cases}
+            p_0 & \text{if $y = 0$} \\
+            (1 - p_0 - p_1)\frac{1}{\beta(a, b)}y^{a - 1}(1 - y)^{b - 1} & \text{if $0 < y < 1$} \\
+            p_1 & \text{if $y = 1$} \\
+            \end{cases}$$
+            for $0 \leq y \leq 1$, where $a = \mu(1 - \si^2)/\si^2, b = (1 - \mu)(1 - \si^2)/\si^2, p_0 = \nu(1 + \nu + \tau)^{-1}, p_1 = \tau(1 + \nu + \tau)^{-1}$ so $a  > 0, b > 0, 0 < p_0 < 1, 0 < p_1 < 1 - p_0$. Thus, \texttt{BEINF}$(\mu, \si, \nu, \tau)$ has parameters $\mu = a/(a + b), \si = (a + b + 1)^{-1/2}, \nu = p_0/p_2, \tau = p_1/p_2,$ where $p_2 = 1 - p_0 - p_1$. Hence, $0 < \mu < 1, 0 < \si < 1, \nu > 0,$ and $\tau < 0$. Also, $E[y] = \frac{\tau + \mu}{(1 + \nu + \tau)}$.
+            \item The default link functions are the logit link for $\mu$ and $\si$ and the log link for $\nu$ and $\tau$.
+        \end{itemize}
+        \item \textbf{Beta inflated 1 distribution}, \texttt{BEINF1}$(\mu, \si, \nu)$
+        \begin{itemize}
+            \item For the usual approach to ROC analysis where it is assumed that the diseased group has higher test results/scores/biomarker values than the non-diseased groups, this distribution will be used less often than the other two. 
+            \item The probability density function of the beta inflated at 1 distribution, denoted by \texttt{BEINF1}$(\mu, \si, \nu)$ is
+            $$f_Y(y|\mu, \si, \nu) = \begin{cases}
+            (1 - p_1)\frac{1}{\be(a,b)}y^{a - 1}(1 - y)^{b-1} & \text{if $0 < y < 1$} \\
+            p_1 & \text{if $y = 1$} \\
+            \end{cases}$$
+            for $0 < y \leq 1$, where $a = \mu(1 - \si^2)/\si^2, b = (1 - \mu)(1 - \si^2)/\si^2, p_1 = \nu(1 + \nu)^{-1}$ so $a < 0, b > 0, 0 < p_1 < 1$. Thus \texttt{BEINF1}$(\mu, \si, \nu)$ has parameters $\mu = a/(a+b)$ and $\si = (a + b + 1)^{-1/2}$, $\nu = p_1/(1 - p_1)$. Hence $0 < \mu < 1, 0 < \si < 1, \nu > 0$. Also, $E[y] = \frac{\nu + \mu}{(1 + \nu)}$.
+            \item The default link functions are the logit link for $\mu$ and $\si$ and the log link for $\nu$.
+        \end{itemize}
+    \end{itemize}
+    \item For situations where the placement values are not contained within the open unit interval, calculate the cdf of the placement values using one of the inflated beta distributions discussed above to obtain the ROC and the AUC.
+    \begin{align*}
+        \texttt{BEINF0 } \text{AUC} &= 1 - \frac{\mu}{(1 + \nu)} \\
+        \texttt{BEINF } \text{AUC} &= 1 - \frac{\tau + \mu}{(1 + \nu + \tau)} \\
+        \texttt{BEINF1 } \text{AUC} &= 1 - \frac{\nu + \mu}{(1 + \nu)} \\
+    \end{align*}
+\end{enumerate}
+
+\textcolor{red}{\textbf{To do - fill in the details.}}
+
+
+
+\section{Simulation}
+{\color{blue} Do you have a way of keeping track of the percentage of times 0's or 1's appear? You may need this in order to understand what your adjustment is doing!}
+
+
+Here, I describe my simulation and give R code. The simulation is pretty similar to that described in Sarah's paper and the \href{https://www.sciencedirect.com/science/article/pii/S0167947310002975}{2011 paper} comparing ROC regression techniques. R code is given in the section titled ``Simulation R Code''
+
+%% SIMULATE BINORMAL DATA
+{\large\textbf{1. Simulate binormal data}}
+
+\vspace{.05in}
+
+Scenario 1 (normal distributions with minimal separation):
+
+\vspace{-.1in}
+
+\begin{itemize}
+    \item[] $Y_1 = 2 + 4X + \varepsilon_1$
+    \item[] $Y_0 = 1.5 + 3X + \varepsilon_0$
+\end{itemize}
+
+Scenario 2 (normal distributions with considerable separation):
+
+\vspace{-.1in}
+
+\begin{itemize}
+    \item[] $Y_1 = 3 + 6X + \varepsilon_1$
+    \item[] $Y_0 = 1.5 + 3X + \varepsilon_0$,
+\end{itemize}
+
+where in both scenarios, $X$ is generated from $U(0,1)$ and $\varepsilon_1$ and $\varepsilon_0$ are generated from $N(0, 1.5^2)$. For the simulation, we generate 1,000 data sets with $n_1, n_0 = 200$. For each data set, the covariate-adjusted ROC is calculated. Also, the number of FPFs considered is $n_T = 50$, so $t = \{1/50, \dots, 49/50\}.$
+
+\vspace{.1in}
+
+The density functions for each scenario are plotted below. \textbf{\textcolor{red}{Red}} denotes the diseased group and \textbf{black} denotes the non-diseased group.
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/SCEN1_BOX_MSE.pdf}}
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/SCEN2_dens.pdf}}
+
+\vspace{.1in}
+
+The binormal ROC and AUC are given by
+
+$$\text{ROC}(t) = \Phi\l[a + b\Phi^{-1}(t)\r] \quad \text{and} \quad \text{AUC} = \Phi\l[\frac{a}{\sqrt{1 + b^2}}\r],$$
+
+where $a = (\mu_1 - \mu_0)/\si_1$ and $b = \si_0/\si_1$.
+
+\vspace{.1in}
+
+The binormal ROC curves for each scenario are plotted below.
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/SCEN1_ROC.pdf}}
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/SCEN2_ROC.pdf}}
+
+\vspace{.1in}
+
+In R, I use a function called \texttt{gen\_Norm\_data} to generate binormal data.
+
+\vskip .1in
+
+%% FUNCTIONS TO CALCULATE ROC FOR EACH METHOD
+{\large\textbf{2. Functions to calculate ROC for each method}}
+
+\vspace{.1in}
+
+In R, I defined functions \texttt{PDF\_FUN}, \texttt{Beta\_FUN}, and \texttt{InfBeta\_FUN} that give the ROC regression coefficients as output. The beta ROC and inflated beta ROC functions also give the number of PVs that are 0 and the number that are 1.
+
+\vskip .1in
+
+\textbf{Inflated Beta ROC:}
+
+\vskip .1in
+
+For each of the data sets, I check to see if any of the placement values are 0 or 1. If the PVs of a data set consists of one or more...
+{\color{red} Is there a threshold? for example is there less than 2\% 0s, does one ignore these cases or use the inflated model? You may need to do a separate simulation to help answer this question. Again this would be part of the PPP}
+\begin{itemize}
+    \item 0s and 1s, I perform \texttt{BEINF} beta inflated regression.
+    \item 0s, I perform \texttt{BEINF0} beta inflated at zero regression.
+    \item 1s, I perform \texttt{BEINF1} beta inflated at one regression.
+\end{itemize}
+
+Otherwise, I perform regular beta regression.
+
+\vskip .1in
+
+%% 3. CALCULATE ROC FOR EACH METHOD
+{\large\textbf{3. Calculate ROC and compute MSE}}
+
+\vspace{.1in}
+
+Here, for each of the 1,000 data sets generated under Scenario 1, I obtain the regression coefficients using the three different methods.
+
+\vskip .1in
+
+Below are histograms of the counts of PVs that are zero from the 1,000 data sets.
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/SCEN1_PV_SUM0.pdf}}
+
+\begin{itemize}
+    \item The number of zero placement values ranges from 1 up to 53. The median zero placement value is 19.
+\end{itemize}
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/SCEN1_PV_SUM1.pdf}}
+
+\begin{itemize}
+    \item The number of one placement values ranges from 0 to 6. We see that a little under half of the data sets do not contain any placement values that are 1.
+\end{itemize}
+
+To determine the difference between the estimator of the covariate-specific ROC curve and the true ROC curve, I calculate the MSE, which is defined in the 2011 paper as
+
+$$\text{MSE} = \frac{1}{n_X}\sum_{l = 0}^{n_X}\frac{1}{n_T}\sum_{r=0}^{n_T}\l(\widehat{\text{ROC}}_{X=x_{l}}(t_r) - \text{ROC}_{X=x_{l}}(t_r)\r)^2,$$
+
+where $x_l = \frac{1}{n_x}, l = 0, \dots, n_x, t_r = \frac{r}{n_T}, r = 0, \dots, n_T,$ and $n_X = n_T = 50.$
+
+\vskip .1in
+
+\textbf{\textcolor{red}{I'm also planning on looking at bias and variance separately}}
+
+\vskip .1in
+
+\textbf{PDF method}
+
+{\centering\includegraphics[width=4in]{Beta(Katie)/SCEN1_MSE_PDF.png}}
+
+
+\vskip .1in
+
+\textbf{Beta method}
+
+{\centering\includegraphics[width=4in]{Beta(Katie)/SCEN1_MSE_Be.png}}
+
+\vskip .1in
+
+\textbf{Inflated beta method}
+
+{\centering\includegraphics[width=4in]{Beta(Katie)/SCEN1_MSE_InfBe.PNG}}
+
+\vskip .1in
+
+The table below combines the MSE summary statistics for each method.
+
+\vskip .1in
+
+\begin{center}
+ \begin{tabular}{|c c c c c c|} 
+ \hline
+ \textbf{Method} & \textbf{Q1} & \textbf{Q2} & \textbf{Q3} & \textbf{Mean} & \textbf{SD} \\
+ \hline
+ Parametric & 0.000713 & 0.001442 & 0.002822 & 0.001995 & 0.001843 \\
+ Beta & 0.000738 & 0.001483 & 0.002844 & 0.002036 & 0.001802 \\
+ Inflated Beta & 0.001143 & 0.001979 & 0.003362 & 0.002577 & 0.002041 \\
+ \hline
+\end{tabular}
+\end{center}
+
+\vskip .1in
+
+On all MSE summary measures, the parametric and beta methods are very similar. In fact, the beta method slightly beats the parametric method when it comes to mean MSE and sd MSE. The inflated beta method is uniformly worse.
+
+\vskip .1in
+
+Boxplots of the MSE values for each method are given in the figure below.
+
+\vskip .1in
+
+{\centering\includegraphics[width=4in]{Beta(Katie)/SCEN1_BOX_MSE.pdf}}
+
+\vskip .1in
+
+I repeat this process of finding the ROCs and MSEs for 1,000 data sets except this time under Scenario 2, where the two populations are considerably separated.
+
+\vskip .1in
+
+\textbf{Histogram of PVs $=0$}
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/SCEN2_PV_SUM0.pdf}}
+
+\begin{itemize}
+    \item The number of zero placement values ranges from 32 to 142. The mean and median zero placement value are 97.
+\end{itemize}
+
+\vskip .1in
+
+\textbf{Histogram of PVs $=1$}
+
+{\centering\includegraphics[width = 4in]{Beta(Katie)/SCEN1_PV_SUM1.pdf}}
+
+\begin{itemize}
+    \item We see that the vast majority of the data sets do not contain any placement values that are 1.
+\end{itemize}
+
+\vskip .1in
+
+\textbf{PDF method}
+
+{\centering\includegraphics[width=4in]{Beta(Katie)/SCEN2_MSE_PDF.PNG}}
+
+\vskip .1in
+
+\textbf{Beta method}
+
+{\centering\includegraphics[width=4in]{Beta(Katie)/SCEN2_MSE_Be.PNG}}
+
+\vskip .1in
+
+\textbf{Inflated beta method}
+
+{\centering\includegraphics[width=4in]{Beta(Katie)/SCEN2_MSE_InfBe.PNG}}
+
+\vskip .1in
+
+The table below combines the MSE summary statistics for each method.
+
+\vskip .1in
+
+\begin{center}
+ \begin{tabular}{|c c c c c c|} 
+ \hline
+ \textbf{Method} & \textbf{Q1} & \textbf{Q2} & \textbf{Q3} & \textbf{Mean} & \textbf{SD} \\
+ \hline
+ Parametric & 0.000346  & 0.000718 & 0.001343  & 0.001017  & 0.000997 \\
+ Beta & 0.00241 & 0.003113  & 0.00402  & 0.003339  & 0.001257 \\
+ Inflated Beta & 0.00796 & 0.009727 & 0.011566 & 0.00991  & 0.002683 \\
+ \hline
+\end{tabular}
+\end{center}
+
+\vskip .1in
+
+The parametric method for this scenario has lower MSE summary measures than that of Scenario 1. The sd MSE is lower for the Beta method in this scenario but increases on the other measures. The inflated beta method has increased MSE summary measures for this scenario vs. Scenario 1. 
+
+\vskip .1in
+
+The parametric method clearly performs better than the other two. The inflated beta method performs the worst.
+
+\vskip .1in
+
+Boxplots of the MSE values for each method are given in the figure below.
+
+\vskip .1in
+
+{\centering\includegraphics[width=4in]{Beta(Katie)/SCEN2_BOX_MSE.pdf}}
+
+\vskip .1in
+
+%% CONDITIONAL DISTRIBUTION APPROACH
+\input{Beta(Katie)/conditional}
+
+I might be thinking about this problem the wrong way, but this is what I did in R. I get the same estimated AUC for unconditional $x_1$ and $x_1$ conditioned on $x_2^*$.
+
+\vskip .1in
+
+\begin{lstlisting}[language=R]
+x1 <- dat$ldl                                      # physical variable
+x2 <- 0.081 * dat$tobacco + 0.924 * dat$famhist +  # medical history
+  0.044 * dat$age                             
+
+# particular setting of x2: tobacco = 2, famhist = 1, age = 45
+x2_star <- 0.081 * 2 + 0.924 * 1 + 0.044 * 45
+
+mu1 <- mean(x1)    # avg. ldl 
+mu2 <- mean(x2)    # avg. medical history variable
+
+rho <- cor(x1, x2) # rho = 0.311
+
+si1 <- sd(x1)      # sd ldl
+si2 <- sd(x2)      # sd medical history variable
+
+x1_cond <- x1 + rho * (si1 / si2) * (x2_star - mu2)  # conditional x1
+
+roc(dat$chd, x1_cond) # AUC = 0.6643 for conditional ldl: x1
+roc(dat$chd, dat$ldl) # AUC = 0.6443 for ldl
+
+# besides differing values on the x-axis, density plots are the same
+ggplot(data.frame(x1), aes(x1)) +
+  geom_density()
+ggplot(data.frame(x1_cond), aes(x1_cond)) +
+  geom_density()
+\end{lstlisting}
+
+\vskip .1in
+
+Isn't the $\rho * (\sigma_1/\sigma_2)(x_2^* - \mu_2)$ just shifting the location of $x_1$? Which is why we get the same ROC and AUC back.
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\vskip 1in
+
+\section{Application to data}
+
+\begin{center}
+Summary of ROC Regression applied to South African Heart Disease Data set
+\end{center}
+
+\vskip .1in
+
+Of the predictor variables included in the South African Heart Disease data set, I consider the following for ROC regression analysis:
+
+\begin{align*}
+  \texttt{tobacco} \qquad & \text{cumulative tobacco/total life time usage (kg)} \\
+  \texttt{ldl} \qquad & \text{low density lipoprotein cholesterol} \\
+  \texttt{famhist} \qquad & \text{family history of heart disease (Present, Absent)} \\
+  \texttt{age} \qquad & \text{age at onset} \\
+\end{align*}
+
+I chose those four predictors based on the results of a logistic regression analysis for this dataset in Hastie, Tibshirani, and Friedman (2013). R code is given in the section ``Application to data R code''.
+
+\vskip .1in
+
+For the ROC regression analysis, I consider \texttt{ldl} as a possible diagnostic marker for \texttt{chd}. By itself, \texttt{ldl} achieves an empirical AUC of 0.664. 
+
+\vskip .1in
+
+The factors \texttt{famhist}, \texttt{age}, and \texttt{tobacco} are included as covariates in the analysis to determine what effects these have on discriminating between subjects with and without chd.
+
+\vskip .1in
+
+I employ the parametric-distribution free (PDF) and Beta methods of ROC regression. For both methods, the number of FPFs considered is $n_T = 50$, so $t = \{1/50, \dots, 49/50\}$.
+
+\vskip .1in
+
+{\large \textbf{1. PDF ROC}}
+
+\vskip .1in
+
+The results for this method are summarized in the table below. Standard errors for regression coefficients were calculated using 1,000 bootstrap samples.
+
+\vskip .1in
+
+\begin{center}
+\begin{tabular}{l| l| l| l| l}
+\hline
+Variable & Coefficient & Standard error & $z$-statistic & $p$-value \\
+\hline
+Intercept & 0.432 & 0.083 & 5.21 & $< 0.001$ \\
+age & $-0.004$ & 0.002 & $-2.127$ & 0.033 \\
+famhist (absent $=0$, present $=1$) & 0.499 & 0.035 & 14.277 & $< 0.001$ \\
+tobacco & $-0.047$ & 0.003 & $-14.111$ & $<0.001$ \\
+$\Phi^{-1}(t)$ & 0.974 & 0.022 & 43.761 & $<0.001$ \\
+\hline
+\end{tabular}
+\end{center}
+
+\vskip .1in
+
+I also obtain an estimate of the AUC for \texttt{age}$=45$ years (median in the data set), \texttt{famhist} $=1$, and \texttt{tobacco}$=5$ kg (around 3rd quartile). The estimated AUC is 0.648.
+
+\vskip .1in
+
+{\large\textbf{2. Beta ROC}}
+
+\vskip .1in
+
+Results are summarized in the table below.  
+
+\vskip .1in
+
+\textcolor{red}{\textbf{In the PDF ROC, \texttt{age} is significant, but not here - I'm not sure why. Also, I understand that interpreting the coefficients is different for the two methods because for one you're using the probit link function and the other a logit link function for the mean parameter, but I would think that the signs on the coefficients should be the same... There might be an error somewhere in my code.}}
+{\color{purple} In the \textbf{PDF ROC} you are modeling binary data, hence your choice of whether '0' or '1' is in the denominator determines the sign of the coefficients. Whereas in the \textbf{BETA ROC} you are modeling interval data on (0,1). Two different problems each producing very similar results (in this case).} {\color{ForestGreen} Try my $new\_x$ variable instead of using separate values for age, famhist, and tobacco.}
+
+\vskip .1in
+
+\textbf{using \texttt{new\_x} variable instead of separate values for age, famhist, and tobacco:}
+
+\vskip .1in
+
+When I use the \texttt{new\_x} variable you defined instead of separate values for age, famhist, and tobacco, I get comparable AUCs for the PDF and Beta methods: PDF AUC: $0.6380$ and Beta AUC: $0.6395$.
+
+\vskip .1in
+
+\textbf{Mean component}
+
+\begin{center}
+\begin{tabular}{l| l| l| l| l|}
+\hline
+Variable & Coefficient & Standard error & $z$-statistic & $p$-value \\
+\hline
+Intercept & $-0.377$ & 0.436 & $-0.864$ & $0.388$ \\
+age & $0.0001$ & 0.009 & $0.020$ & 0.984 \\
+famhist (absent $=0$, present $=1$) & $-0.495$ & 0.186 & $-2.660$ & $0.008$ \\
+tobacco & $0.054$ & 0.017 & $3.145$ & $0.002$ \\
+\hline
+\end{tabular}
+\end{center}
+
+\vskip .1in
+
+\textbf{Precision component}
+
+\begin{center}
+\begin{tabular}{l| l| l| l| l}
+\hline
+Variable & Coefficient & Standard error & $z$-statistic & $p$-value \\
+\hline
+$\phi$ & 1.833 & 0.175 & 10.452 & 0 \\
+\hline
+\end{tabular}
+\end{center}
+
+\vskip .1in
+
+The estimate for the AUC is 0.644, which is similar to that for the PDF method. 
+
+\vskip .1in
+
+Here, I plot the ROC curves for both methods on the same graph. \textbf{Black} is PDF ROC, and \textcolor{red}{\textbf{red}} is Beta ROC.
+
+\vskip .1in
+
+\begin{center}
+\includegraphics[width = 4in]{Beta(Katie)/SA_ROC_curves.pdf}
+\end{center}
+
+\section{Simulation Code}
+
+\begin{lstlisting}[language=R]
+# load packages
+library("tidyverse"); theme_set(theme_classic())
+library("boot")
+library("pROC")
+library("mvtnorm")
+library("quantreg")
+library("betareg")
+library("gamlss")
+
+# Simulate binormal data
+
+# density functions for Y1 and Y0
+Norm_dens <- function(Y, c, d, sd_e){
+  dnorm(Y, c + d * .5, sd_e) # mean of U(0, 1) r.v. is 0.5
+}
+
+# SCENARIO 1: normal distributions with minimal separation
+SC1_H <- list(c = 1.5, d = 3, sd = 1.5)
+SC1_D <- list(c = 2, d = 4, sd = 1.5)
+
+ggplot(data.frame(x = c(-4, 10)), aes(x)) +
+  stat_function(fun = Norm_dens, args = SC1_H) +
+  stat_function(fun = Norm_dens, args = SC1_D, color = "red") +
+  xlab("Y") + 
+  ylab("Density")
+
+# SCENARIO 2: normal distributions with considerable separation
+SC2_H <- SC1_H
+SC2_D <- list(c = 3, d = 6, sd = 1.5)
+ggplot(data.frame(x = c(-4, 10)), aes(x)) +
+  stat_function(fun = Norm_dens, args = SC2_H) +
+  stat_function(fun = Norm_dens, args = SC2_D, color = "red")
+
+# binormal ROC curves for each scenario
+
+# True covariate-adjusted binormal ROC curve
+true_binormal_ROC <- function(t, c1, d1, sd1, c0, d0, sd0, X0){
+  a <- (c1 + d1 * X0 - (c0 + d0 * X0)) / sd1
+  b <- sd0 / sd1
+  pnorm(a + b * qnorm(t))
+}
+
+# True covariate-adjusted binormal AUC
+true_binormal_AUC <- function(c1, d1, sd1, c0, d0, sd0, X0){
+  a <- (c1 + d1 * X0 - (c0 + d0 * X0)) / sd1
+  b <- sd0 / sd1
+  pnorm(a / sqrt(1 + b^2))
+}
+
+SC1_H_v <- unlist(SC1_H)
+SC1_D_v <- unlist(SC1_D)
+
+# SCENARIO 1: TRUE ROC curve and AUC
+ggplot(data.frame(t = c(0, 1)), aes(t)) +
+  stat_function(fun = true_binormal_ROC, args = list(SC1_D_v[1], SC1_D_v[2],
+  SC1_D_v[3], SC1_H_v[1], SC1_H_v[2], SC1_H_v[3], X0 = 0.2)) +
+  annotate("text", x = 0.7, y = 0.3, 
+           label = paste0("AUC = ", true_binormal_AUC(SC1_D_v[1],
+           SC1_D_v[2], SC1_D_v[3],
+           SC1_H_v[1], SC1_H_v[2], SC1_H_v[3],
+           X0 = 0.2) %>% round(3))) +
+  ylab("ROC(t)") +
+  coord_fixed(ratio = 1)
+
+SC2_H_v <- unlist(SC2_H)
+SC2_D_v <- unlist(SC2_D)
+
+# SCENARIO 2: TRUE ROC curve and AUC
+ggplot(data.frame(t = c(0, 1)), aes(t)) +
+  stat_function(fun = true_binormal_ROC, 
+  args = list(SC2_D_v[1], SC2_D_v[2], SC2_D_v[3], SC2_H_v[1], 
+  SC2_H_v[2], SC2_H_v[3], X0 = 0.2)) +
+  annotate("text", x = 0.7, y = 0.3, 
+           label = paste0("AUC = ",
+           true_binormal_AUC(SC2_D_v[1], SC2_D_v[2], SC2_D_v[3],
+           SC2_H_v[1], SC2_H_v[2], SC2_H_v[3],
+           X0 = 0.2) %>% round(3))) +
+  ylab("ROC(t)") +
+  coord_fixed(ratio = 1)
+
+# function to generate binormal data
+gen_Norm_data <- function(c0, d0, sd_e0, n0, c1, d1, sd_e1, n1){
+  x <- runif(n1)
+  eps0 <- rnorm(n0, 0, sd_e0)
+  eps1 <- rnorm(n1, 0, sd_e1)
+  y0 <- c0 + d0 * x + eps0
+  y1 <- c1 + d1 * x + eps1
+  
+  data.frame(y = c(y0, y1), dis = as.factor(c(rep(0, n0), rep(1, n1))),
+             x = rep(x, 2))
+}
+
+n_T <- 50
+t <- seq(1/n_T, (n_T - 1)/n_T, 1/n_T) # set of FPRs considered
+
+set.seed(2433)
+# generate 1,000 datasets
+dats <- replicate(1000, gen_Norm_data(1.5, 3, 1.5, 200, 2, 4, 1.5, 200), 
+simplify = FALSE)
+
+# 2. Functions to calculate ROC for each method
+
+# A. parametric distribution-free method (PDF)
+PDF_FUN <- function(data, t){
+  df0 <- filter(data, dis == 0)
+  df1 <- filter(data, dis == 1)
+  
+  n1 <- nrow(df1)
+  # quantile regression to estimate reference survival
+  qr0 <- rq(y ~ x, data = df0, tau = t) 
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <- predict.rq(qr0, newdata = df1)
+  
+  Inv_t <- qnorm(rev(t)) # normal quantiles of FPRs
+  nq <- length(t)        # number of quantiles
+  
+  # reshaping the data
+  t_pred1 <- t(pred1)
+  col_pred1 <- c(t_pred1)
+  col_t <- rep(Inv_t, n1)
+  col_y1 <- rep(df1$y, each = nq)
+  col_x <- rep(df1$x, each = nq)
+  col_uit <- as.numeric(col_y1 >= col_pred1)
+  
+  probitData <- data.frame("fdbar" = col_pred1, "phiInv" = col_t, 
+  "disRes" = col_y1, "covX" = col_x, "uit" = col_uit)
+  
+  probMod <- glm(uit ~ phiInv + covX, family = binomial(link = "probit"), 
+                  data = probitData)
+  probMod$coefficients
+}
+
+# B. Beta method.
+
+# function that transforms PVs, so they're in the open unit interval
+dep_trans_betareg <- function(y){
+  n_obs <- sum(!(is.na(y)))
+  (y * (n_obs - 1) + 0.5) / n_obs
+}
+
+Beta_FUN <- function(data, t){
+  df0 <- filter(data, dis == 0)
+  df1 <- filter(data, dis == 1)
+  
+  Y_D <- pull(df1, y)
+  n1 <- nrow(df1)
+  
+  # quantile regression to estimate reference survival
+  qr0 <- rq(y ~ x, data = df0, tau = t) 
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <- predict.rq(qr0, newdata = df1)
+  t_pred1 <- t(pred1)
+  pred3 <- lapply(seq_len(ncol(t_pred1)), function(i) t_pred1[,i])
+  PV_dis <- mapply(function(x, y) mean(x >= y), x = pred3, y = Y_D) 
+  datdis <- data.frame(Y_D, x = df1$x, PV_dis)
+  
+  if(any(datdis$PV_dis == 0 | datdis$PV_dis == 1)){ # transform PVs
+    SUM0 <- sum(datdis$PV_dis == 0) # keep PVs = 0
+    SUM1 <- sum(datdis$PV_dis == 1) # keep track of PVs = 1
+    BetaMod <- betareg(dep_trans_betareg(PV_dis) ~ x, data = datdis,
+                       link.phi = "identity", link = "logit")
+    
+    list(BetaMod$coefficients, SUM0 = SUM0, SUM1 = SUM1)
+  }else{
+    BetaMod <- betareg(PV_dis ~ x, data = datdis,
+                       link.phi = "identity", link = "logit")
+    
+    list(BetaMod$coefficients)
+  }
+}
+
+# C. Inflated Beta method.
+InfBeta_FUN <- function(data, t){
+  df0 <- filter(data, dis == 0)
+  df1 <- filter(data, dis == 1)
+  
+  Y_D <- pull(df1, y)
+  n1 <- nrow(df1)
+  
+  # quantile regression to estimate reference survival
+  qr0 <- rq(y ~ x, data = df0, tau = t) 
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <- predict.rq(qr0, newdata = df1)
+  t_pred1 <- t(pred1)
+  pred3 <- lapply(seq_len(ncol(t_pred1)), function(i) t_pred1[,i])
+  PV_dis <- mapply(function(x, y) mean(x >= y), x = pred3, y = Y_D) 
+  disdat <<- data.frame(Y_D, x = df1$x, PV_dis)
+  
+  if(any(disdat$PV_dis == 0) & any(disdat$PV_dis == 1)){ ## BEINF Beta Inflated
+    SUM0 <- sum(disdat$PV_dis == 0)
+    SUM1 <- sum(disdat$PV_dis == 1)
+    Beta_InfMod <<- gamlss(PV_dis ~ x, data = disdat, family = BEINF)
+    list(Beta_InfMod$mu.coefficients,
+         Beta_InfMod$sigma.coefficients,
+         Beta_InfMod$nu.coefficients,
+         Beta_InfMod$tau.coefficients, SUM0 = SUM0, SUM1 = SUM1)
+  }else if(any(disdat$PV_dis == 0)){      ## BEINF0 Beta Inflated zero
+    SUM0 <- sum(disdat$PV_dis == 0)
+    Beta_0Inf <<- gamlss(PV_dis ~ x, data = disdat, family = BEINF0)
+    list(Beta_0Inf$mu.coefficients,
+         Beta_0Inf$sigma.coefficients,
+         Beta_0Inf$nu.coefficients, SUM0 = SUM0, SUM1 = 0)
+  }else if(any(disdat$PV_dis == 1)){     ## BEINF1 Beta Inflated one
+    SUM1 <- sum(disdat$PV_dis == 1)
+    Beta_1Inf <- gamlss(PV_dis ~ x, data = disdat, family = BEINF1)
+    list(Beta_1Inf$mu.coefficients,
+         Beta_1Inf$sigma.coefficients,
+         Beta_1Inf$nu.coefficients, SUM0 = 0, SUM1 = SUM1)
+  }else{                                 ## Regular beta regression
+    BetaMod <- betareg(PV_dis ~ x, data = disdat,
+                       link.phi = "identity", link = "logit")
+    list(BetaMod$coefficients, SUM0 = 0, SUM1 = 0)
+  }
+}
+
+# 3. Calculate ROC and compute MSE
+
+# for each of the 1,000 data sets generated under Scenario 1, I obtain the regression coefficients using the three different methods.
+
+PDF_coefs <- sapply(dats, PDF_FUN, t = t, simplify = FALSE)
+Beta_coefs <- sapply(dats, Beta_FUN, t = t, simplify = FALSE)
+InfBeta_coefs <- sapply(dats, InfBeta_FUN, t = t, simplify = FALSE)
+
+# histograms of the counts of PVs that are zero from the 1,000 data sets.
+
+# get number of PVS that are 0 and 1 for each data set
+getNums <- function(coefs, SUM0, SUM1){
+  coefs <- unlist(coefs)
+  coefs[c(SUM0, SUM1)]
+}
+
+PVs_0and1 <- sapply(Beta_coefs, getNums, "SUM0", "SUM1")
+df_PVs <- data.frame(t(PVs_0and1))
+
+# histogram of PVs = 0
+ggplot(df_PVs, aes(SUM0)) +
+  geom_histogram()
+
+# histogram of PVs = 1
+ggplot(df_PVs, aes(SUM1))  +
+  geom_histogram(bins = 6)
+
+# Determine the difference between the estimator of the covarariate-specific ROC curve and the true ROC curve, I calculate the MSE (defined in the 2011 paper)
+
+# TRUE ROC(t) values for t = 0, 1/50, ..., 1.
+T_vals <- mapply(true_binormal_ROC, t = c(0, t, 1), 
+X0 = rep(c(0, t, 1), each = length(t) + 2),
+MoreArgs = list(c1 = 2, d1 = 4, sd1 = 1.5, c0 = 1.5, d0 = 3, sd0 = 1.5))
+                               
+# MSE wrapper function
+wrapper <- function(coef_vals, ROC_fun){
+  mapply(ROC_fun, t = c(0, t, 1), X_val = rep(c(0, t, 1), each = length(t) + 2),
+         MoreArgs = list(coef_vals))
+}
+
+# function to get PDF ROC for particular t and X_val
+binorm_ROC <- function(coefs, t, X_val){
+  coefs <- unlist(coefs)
+  ga_1 <- coefs[[1]]
+  ga_2 <- coefs[[2]]
+  Be <- coefs[[3]]
+  pnorm(ga_1 + ga_2 * qnorm(t) + Be * X_val)
+}
+
+PDF_vals <- sapply(PDF_coefs, wrapper, ROC_fun = binorm_ROC)
+
+MSE_PDF <- apply(PDF_vals, 2, function(x) sum((x - T_vals)^2)/n_T^2)
+summary(MSE_PDF) 
+
+# function to get Beta ROC for particular t and X_val
+Beta_ROC <- function(coefs, t, X_val){
+  coefs <- unlist(coefs)
+  Be_hat0 <- coefs[[1]]
+  Be_hat1 <- coefs[[2]]
+  phi_hat <- coefs[[3]]
+  
+  a_hat <- phi_hat/(1 + exp(-Be_hat0 -X_val * Be_hat1))
+  b_hat <- phi_hat * (1 - 1/(1 + exp(-Be_hat0 -X_val * Be_hat1)))
+  pbeta(t, a_hat, b_hat)
+}
+
+Be_vals <- sapply(Beta_coefs, wrapper, ROC_fun = Beta_ROC)
+
+MSE_Be <- apply(Be_vals, 2, function(x) sum((x - T_vals)^2)/n_T^2)
+summary(MSE_Be)
+
+# function to get Inf Beta ROC for particular t and X_val
+InfBeta_ROC <- function(coefs, t, X_val){
+  coefs <- unlist(coefs)
+  
+  if(coefs["SUM0"] > 0 | coefs["SUM1"] > 0){ ## BEINF/BEINF0/BEINF1
+    mu.c1 <- coefs[[1]]
+    mu.c2 <- coefs[[2]]
+    mu <- 1 / (1 + exp(-mu.c1 - X_val * mu.c2))
+    sig.c <- coefs[[3]]
+    sig <- 1 / (1 + exp(-sig.c))
+    nu.c <- coefs[[4]]
+    nu <- exp(nu.c)
+    if(coefs["SUM0"] > 0 & coefs["SUM1"] > 0){ ## BEINF cdf
+      tau.c <- coefs[[5]]
+      tau <- exp(tau.c)
+      pBEINF(t, mu, sig, nu, tau)
+    }else if(coefs["SUM0"] > 0){               ## BEINF0 cdf
+      pBEINF0(t, mu, sig, nu)
+    }else if(coefs["SUM1"] > 0){               ## BEINF1 cdf
+      pBEINF1(t, mu, sig, nu)
+    } 
+  }else{                                       ## Beta cdf
+    Be_hat0 <- coefs[[1]]
+    Be_hat1 <- coefs[[2]]
+    phi_hat <- coefs[[3]]
+    
+    a_hat <- phi_hat/(1 + exp(-Be_hat0 -X_val * Be_hat1))
+    b_hat <- phi_hat * (1 - 1/(1 + exp(-Be_hat0 -X_val * Be_hat1)))
+    pbeta(t, a_hat, b_hat)
+  }
+}
+
+outputInf <- sapply(InfBeta_coefs, wrapper, ROC_fun = InfBeta_ROC)
+MSE_Inf <- apply(outputInf, 2, function(x) sum((x - T_vals)^2)/n_T^2)
+summary(MSE_Inf)
+
+# Boxplots of the MSE values for each method
+
+datMSE <- data.frame(MSE = c(MSE_PDF, MSE_Be, MSE_Inf), 
+type = c(rep("PDF", length(MSE_PDF)), rep("Beta", length(MSE_Be)),
+rep("InfBeta", length(MSE_Inf))))
+
+ggplot(datMSE, aes(type, MSE)) +
+  geom_boxplot()
+
+## Repeat process of finding the ROCs and MSEs for 1,000 data sets except this time under Scenario 2, where the two populations are considerably separated.
+
+# generate 1,000 data sets
+dats2 <- replicate(1000, gen_Norm_data(1.5, 3, 1.5, 200, 3, 6, 1.5, 200), 
+simplify = FALSE)
+
+# ROC regression coefficients for multiple datasets
+PDF_coefs2 <- sapply(dats2, PDF_FUN, t = t, simplify = FALSE)
+Beta_coefs2 <- sapply(dats2, Beta_FUN, t = t, simplify = FALSE)
+InfBeta_coefs2 <- sapply(dats2, InfBeta_FUN, t = t)
+
+PVs_0and1_2 <- sapply(Beta_coefs2, getNums, "SUM0", "SUM1")
+df_PVs2 <- data.frame(t(PVs_0and1_2))
+
+# histogram of PVs = 0
+ggplot(df_PVs2, aes(SUM0)) +
+  geom_histogram()
+
+# histogram of PVs = 1
+ggplot(df_PVs2, aes(SUM1))  +
+  geom_histogram(bins = 3)
+
+# TRUE ROC(t) values for t = 0, 1/50, ..., 1.
+T_vals2 <- mapply(true_binormal_ROC, t = c(0, t, 1), X0 = rep(c(0, t, 1), 
+each = length(t) + 2), 
+MoreArgs = list(c1 = 3, d1 = 6, sd1 = 1.5, c0 = 1.5, d0 = 3, sd0 = 1.5))
+
+PDF_vals2 <- sapply(PDF_coefs2, wrapper, ROC_fun = binorm_ROC)
+
+MSEs2 <- apply(PDF_vals2, 2, function(x) sum((x - T_vals2)^2)/n_T^2)
+summary(MSEs2)
+
+outputBe2 <- sapply(Beta_coefs2, wrapper, ROC_fun = Beta_ROC)
+
+MSE_Bes2 <- apply(outputBe2, 2, function(x) sum((x - T_vals2)^2)/n_T^2)
+summary(MSE_Bes2)
+
+outputInf2 <- sapply(InfBeta_coefs2, wrapper, ROC_fun = InfBeta_ROC)
+MSE_Inf2 <- apply(outputInf2, 2, function(x) sum((x - T_vals2)^2)/n_T^2)
+summary(MSE_Inf2)
+
+# Boxplots of the MSE values for each method
+
+datMSE <- data.frame(MSE = c(MSE_PDF, MSE_Be, MSE_Inf), 
+type = c(rep("PDF", length(MSE_PDF)), rep("Beta", length(MSE_Be)),
+rep("InfBeta", length(MSE_Inf))))
+
+ggplot(datMSE, aes(type, MSE)) +
+  geom_boxplot()
+\end{lstlisting}
+
+\section{Application to data code}
+
+\begin{lstlisting}[language=R]
+# load packages
+library("tidyverse"); theme_set(theme_classic())
+library("pROC")
+library("quantreg")
+library("betareg")
+
+# load data
+dat <- read_excel("South African Heart Disease.xlsx")
+dat$row.names <- NULL
+dat$famhist <- ifelse(dat$famhist == "Present", 1, 0) %>% factor()
+
+# Empirical AUC of ldl
+roc(dat$chd, dat$ldl)
+
+# selecting variables for ROC regression
+dat_mod <- dplyr::select(dat, chd, age, ldl, famhist, tobacco)
+
+n_T <- 50
+t <- seq(1/n_T, (n_T - 1)/n_T, 1/n_T) # set of FPRs
+
+# 1. PDF ROC on SA chd data set
+PDF_fun <- function(data, t){
+  df0 <- filter(data, chd == 0)
+  df1 <- filter(data, chd == 1)
+  
+  n1 <- nrow(df1)
+  # quantile regression to estimate reference survival
+  qr0 <- rq(ldl ~ famhist + age + tobacco, data = df0, tau = t)
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <- predict.rq(qr0, newdata = df1)
+  
+  Inv_t <- qnorm(rev(t))  # normal quantiles of FPRs
+  nq <- length(t)         # number of quantiles
+  
+  # reshaping the data
+  t_pred1 <- t(pred1)
+  col_pred1 <- c(t_pred1)
+  col_t <- rep(Inv_t, n1)
+  col_ldl <- rep(df1$ldl, each = nq)
+  col_age <- rep(df1$age, each = nq)
+  col_tobacco <- rep(df1$tobacco, each = nq)
+  col_famhist <- rep(df1$famhist, each = nq)
+  col_uit <- as.numeric(col_ldl >= col_pred1)
+  
+  probitData <- data.frame(fdbar = col_pred1, phiInv = col_t,
+                           ldl = col_ldl, age = col_age,
+                           tobacco = col_tobacco, famhist = col_famhist,
+                           uit = col_uit)
+  probMod <- glm(uit ~ phiInv + famhist + age + tobacco, 
+                 family = binomial(link = "probit"), data = probitData)
+  summary(probMod)
+}
+
+coefs_PDF <- PDF_fun(dat_mod, t = t)$coefficients[,1]   # coefficients
+coefs_PDF
+
+# bootstrapping SEs
+B <- 1000
+results <- matrix(NA ,nrow = B, ncol = 5)
+for(b in 1:B){
+  boot_dat <- dat_mod[sample(nrow(dat_mod), nrow(dat_mod),
+                             replace = TRUE),]
+  results[b,] <- PDF_fun(boot_dat, t = t)$coefficients[,2]
+}
+
+colMeans(results) # Bootstrap SEs for coefficients
+
+# get z statistics and p-values
+get_sigs <- function(estimate, std_error){
+  z <- estimate / std_error
+  c(z, ifelse(z > 0, pnorm(z, lower.tail = FALSE) * 2,
+         pnorm(z) * 2))
+}
+map2(.x = coefs_PDF,
+     .y = colMeans(results), get_sigs)
+
+# Estimate of AUC: age = 45, famhist = 1, tobacco = 5
+pnorm((coefs_PDF[1] + coefs_PDF[3] + coefs_PDF[4] * 45 +
+         coefs_PDF[5] * 5)/sqrt(1 + coefs_PDF[2]^2))
+
+# 2. Beta ROC on SA chd data set
+
+# function that transforms PVs, so they're in the open unit interval
+dep_trans_betareg <- function(y){
+  n_obs <- sum(!(is.na(y)))
+  (y * (n_obs - 1) + 0.5) / n_obs
+}
+
+Beta_FUN <- function(data, t){
+  df0 <- filter(data, chd == 0)
+  df1 <- filter(data, chd == 1)
+  
+  Y_ldl <- pull(df1, ldl)
+  n1 <- nrow(df1)
+  
+  # quantile regression to estimate reference survival
+  qr0 <<- rq(ldl ~ famhist + age + tobacco, data = df0, tau = t) 
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <<- predict.rq(qr0, newdata = df1)
+  t_pred1 <- t(pred1)
+  pred3 <- lapply(seq_len(ncol(t_pred1)), function(i) t_pred1[,i])
+  PV_dis <<- mapply(function(x, y) mean(x >= y), x = pred3, y = Y_ldl) 
+  datdis <<- data.frame(Y_ldl, age = df1$age, 
+                        famhist = df1$famhist, tobacco = df1$tobacco,
+                        PV_dis)
+  
+  if(any(datdis$PV_dis == 0 | datdis$PV_dis == 1)){ # transform PVs if any are 0 or 1
+    SUM0 <- sum(datdis$PV_dis == 0)
+    SUM1 <- sum(datdis$PV_dis == 1)
+    BetaMod <<- betareg(dep_trans_betareg(PV_dis) ~ famhist + age + tobacco, 
+                       data = datdis,
+                       link.phi = "identity", link = "logit")
+    
+    BetaMod$coefficients
+  }else{
+    BetaMod <- betareg(PV_dis ~ famhist + age + tobacco, data = datdis,
+                       link.phi = "identity", link = "logit")
+    
+    BetaMod$coefficients
+  }
+}
+
+coefs_Be <- Beta_FUN(dat_mod, t = t)    # coefficients
+coefs_Be
+
+# function to get Beta AUC
+Beta_AUC <- function(coefs, X_val = matrix(c(1, 1, 45, 5), nrow = 4)){
+  coefs <- unlist(coefs)
+  Be_hat0 <- coefs[[1]]
+  Be_hat_fh <- coefs[[2]]
+  Be_hat_age <- coefs[[3]]
+  Be_hat_tob <- coefs[[4]]
+  phi_hat <- coefs[[5]]
+  
+  Be <- matrix(c(Be_hat0, Be_hat_fh, Be_hat_age,
+                 Be_hat_tob), ncol = 4)
+  
+  a_hat <- phi_hat/(1 + exp(-Be %*% X_val))
+  b_hat <- phi_hat * (1 - 1/(1 + exp(-Be %*% X_val)))
+  # pbeta(t, a_hat, b_hat)    ## ROC
+  1 - a_hat / (a_hat + b_hat) ## AUC
+}
+
+Beta_AUC(coefs_Be)
+
+# Plotting ROC curves for PDF method and Beta method
+
+Beta_ROC <- function(coefs, t, X_val = matrix(c(1, 1, 45, 5), nrow = 4)){
+  coefs <- unlist(coefs)
+  Be_hat0 <- coefs[[1]]
+  Be_hat_fh <- coefs[[2]]
+  Be_hat_age <- coefs[[3]]
+  Be_hat_tob <- coefs[[4]]
+  phi_hat <- coefs[[5]]
+  
+  Be <- matrix(c(Be_hat0, Be_hat_fh, Be_hat_age,
+                 Be_hat_tob), ncol = 4)
+  
+  a_hat <- phi_hat/(1 + exp(-Be %*% X_val))
+  b_hat <- phi_hat * (1 - 1/(1 + exp(-Be %*% X_val)))
+  
+  pbeta(t, a_hat, b_hat)    ## ROC
+}
+
+binorm_ROC <- function(coefs, t, X_val = matrix(c(1, 45, 5), nrow = 3)){
+  ga_1 <- coefs[1]
+  ga_2 <- coefs[2]
+  Be <- coefs[c(3, 4, 5)] %>% matrix %>% t
+  
+  pnorm(ga_1 + ga_2 * qnorm(t) + c(Be %*% X_val))
+}
+
+# plot of ROC curves
+ggplot(data.frame(t = c(0, 1)), aes(t)) +
+  stat_function(fun = binorm_ROC, args = list(coefs = coefs_PDF)) + 
+  stat_function(fun = Beta_ROC, args = list(coefs = coefs_Be),
+                color = "red") + 
+  ylab("ROC(t)")
+
+\end{lstlisting}
+
+\end{document}
