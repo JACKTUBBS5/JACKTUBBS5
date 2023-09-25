@@ -1,0 +1,615 @@
+---
+title: "Katie ROC Regression"
+author: "jdt"
+date: "2023-09-24"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# load packages
+```{r}
+
+library("tidyverse"); theme_set(theme_classic())
+library("boot")
+library("pROC")
+library("mvtnorm")
+library("quantreg")
+library("betareg")
+library("gamlss")
+library("ggplot2")
+```
+# Simulate binormal data
+
+```{r}
+
+# density functions for Y1 and Y0
+Norm_dens <- function(Y, c, d, sd_e){
+  dnorm(Y, c + d * .5, sd_e) # mean of U(0, 1) r.v. is 0.5
+}
+
+# SCENARIO 1: normal distributions with minimal separation
+SC1_H <- list(c = 1.5, d = 3, sd = 1.5)
+SC1_D <- list(c = 2, d = 4, sd = 1.5)
+
+ggplot(data.frame(x = c(-4, 10)), aes(x)) +
+  stat_function(fun = Norm_dens, args = SC1_H) +
+  stat_function(fun = Norm_dens, args = SC1_D, color = "red") +
+  xlab("Y") + 
+  ylab("Density")
+
+# SCENARIO 2: normal distributions with considerable separation
+SC2_H <- SC1_H
+SC2_D <- list(c = 3, d = 6, sd = 1.5)
+
+ggplot(data.frame(x = c(-4, 10)), aes(x)) +
+  stat_function(fun = Norm_dens, args = SC2_H) +
+  stat_function(fun = Norm_dens, args = SC2_D, color = "red")
+
+# binormal ROC curves for each scenario
+
+# True covariate-adjusted binormal ROC curve
+true_binormal_ROC <- function(t, c1, d1, sd1, c0, d0, sd0, X0){
+  a <- (c1 + d1 * X0 - (c0 + d0 * X0)) / sd1
+  b <- sd0 / sd1
+  pnorm(a + b * qnorm(t))
+}
+
+# True covariate-adjusted binormal AUC
+true_binormal_AUC <- function(c1, d1, sd1, c0, d0, sd0, X0){
+  a <- (c1 + d1 * X0 - (c0 + d0 * X0)) / sd1
+  b <- sd0 / sd1
+  pnorm(a / sqrt(1 + b^2))
+}
+
+SC1_H_v <- unlist(SC1_H)
+SC1_D_v <- unlist(SC1_D)
+```
+
+# SCENARIO 1: TRUE ROC curve and AUC
+
+```{r}
+
+ggplot(data.frame(t = c(0, 1)), aes(t)) +
+  stat_function(fun = true_binormal_ROC, args = list(SC1_D_v[1], SC1_D_v[2],
+  SC1_D_v[3], SC1_H_v[1], SC1_H_v[2], SC1_H_v[3], X0 = 0.2)) +
+  annotate("text", x = 0.7, y = 0.3, 
+           label = paste0("AUC = ", true_binormal_AUC(SC1_D_v[1],
+           SC1_D_v[2], SC1_D_v[3],
+           SC1_H_v[1], SC1_H_v[2], SC1_H_v[3],
+           X0 = 0.2) %>% round(3))) +
+  ylab("ROC(t)") +
+  coord_fixed(ratio = 1)
+
+SC2_H_v <- unlist(SC2_H)
+SC2_D_v <- unlist(SC2_D)
+```
+# SCENARIO 2: TRUE ROC curve and AUC
+
+```{r}
+
+ggplot(data.frame(t = c(0, 1)), aes(t)) +
+  stat_function(fun = true_binormal_ROC, 
+  args = list(SC2_D_v[1], SC2_D_v[2], SC2_D_v[3], SC2_H_v[1], 
+  SC2_H_v[2], SC2_H_v[3], X0 = 0.2)) +
+  annotate("text", x = 0.7, y = 0.3, 
+           label = paste0("AUC = ",
+           true_binormal_AUC(SC2_D_v[1], SC2_D_v[2], SC2_D_v[3],
+           SC2_H_v[1], SC2_H_v[2], SC2_H_v[3],
+           X0 = 0.2) %>% round(3))) +
+  ylab("ROC(t)") +
+  coord_fixed(ratio = 1)
+```
+# function to generate binormal data
+
+```{r}
+
+gen_Norm_data <- function(c0, d0, sd_e0, n0, c1, d1, sd_e1, n1){
+  x <- runif(n1)
+  eps0 <- rnorm(n0, 0, sd_e0)
+  eps1 <- rnorm(n1, 0, sd_e1)
+  y0 <- c0 + d0 * x + eps0
+  y1 <- c1 + d1 * x + eps1
+  
+  data.frame(y = c(y0, y1), dis = as.factor(c(rep(0, n0), rep(1, n1))),
+             x = rep(x, 2))
+}
+
+n_T <- 50
+t <- seq(1/n_T, (n_T - 1)/n_T, 1/n_T) # set of FPRs considered
+```
+
+```{r}
+
+set.seed(2433)
+# generate 1,000 datasets  # Changed to 100
+dats <- replicate(100, gen_Norm_data(1.5, 3, 1.5, 200, 2, 4, 1.5, 200), 
+simplify = FALSE)
+
+```
+
+# 2. Functions to calculate ROC for each method
+# A. parametric distribution-free method (PDF)
+
+```{r}
+
+PDF_FUN <- function(data, t){
+  df0 <- filter(data, dis == 0)
+  df1 <- filter(data, dis == 1)
+  
+  n1 <- nrow(df1)
+  # quantile regression to estimate reference survival
+  qr0 <- rq(y ~ x, data = df0, tau = t) 
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <- predict.rq(qr0, newdata = df1)
+  
+  Inv_t <- qnorm(rev(t)) # normal quantiles of FPRs
+  nq <- length(t)        # number of quantiles
+  
+  # reshaping the data
+  t_pred1 <- t(pred1)
+  col_pred1 <- c(t_pred1)
+  col_t <- rep(Inv_t, n1)
+  col_y1 <- rep(df1$y, each = nq)
+  col_x <- rep(df1$x, each = nq)
+  col_uit <- as.numeric(col_y1 >= col_pred1)
+  
+  probitData <- data.frame("fdbar" = col_pred1, "phiInv" = col_t, 
+  "disRes" = col_y1, "covX" = col_x, "uit" = col_uit)
+  
+  probMod <- glm(uit ~ phiInv + covX, family = binomial(link = "probit"), 
+                  data = probitData)
+  probMod$coefficients
+}
+```
+
+# B. Beta method.
+# function that transforms PVs, so they're in the open unit interval
+
+```{r}
+
+dep_trans_betareg <- function(y){
+  n_obs <- sum(!(is.na(y)))
+  (y * (n_obs - 1) + 0.5) / n_obs
+}
+
+Beta_FUN <- function(data, t){
+  df0 <- filter(data, dis == 0)
+  df1 <- filter(data, dis == 1)
+  
+  Y_D <- pull(df1, y)
+  n1 <- nrow(df1)
+  
+  # quantile regression to estimate reference survival
+  qr0 <- rq(y ~ x, data = df0, tau = t) 
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <- predict.rq(qr0, newdata = df1)
+  t_pred1 <- t(pred1)
+  pred3 <- lapply(seq_len(ncol(t_pred1)), function(i) t_pred1[,i])
+  PV_dis <- mapply(function(x, y) mean(x >= y), x = pred3, y = Y_D) 
+  datdis <- data.frame(Y_D, x = df1$x, PV_dis)
+  
+  if(any(datdis$PV_dis == 0 | datdis$PV_dis == 1)){ # transform PVs
+    SUM0 <- sum(datdis$PV_dis == 0) # keep PVs = 0
+    SUM1 <- sum(datdis$PV_dis == 1) # keep track of PVs = 1
+    BetaMod <- betareg(dep_trans_betareg(PV_dis) ~ x, data = datdis,
+                       link.phi = "identity", link = "logit")
+    
+    list(BetaMod$coefficients, SUM0 = SUM0, SUM1 = SUM1)
+  }else{
+    BetaMod <- betareg(PV_dis ~ x, data = datdis,
+                       link.phi = "identity", link = "logit")
+    
+    list(BetaMod$coefficients)
+  }
+}
+```
+
+# C. Inflated Beta method.
+
+```{r}
+
+InfBeta_FUN <- function(data, t){
+  df0 <- filter(data, dis == 0)
+  df1 <- filter(data, dis == 1)
+  
+  Y_D <- pull(df1, y)
+  n1 <- nrow(df1)
+  
+  # quantile regression to estimate reference survival
+  qr0 <- rq(y ~ x, data = df0, tau = t) 
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <- predict.rq(qr0, newdata = df1)
+  t_pred1 <- t(pred1)
+  pred3 <- lapply(seq_len(ncol(t_pred1)), function(i) t_pred1[,i])
+  PV_dis <- mapply(function(x, y) mean(x >= y), x = pred3, y = Y_D) 
+  disdat <<- data.frame(Y_D, x = df1$x, PV_dis)
+  
+  if(any(disdat$PV_dis == 0) & any(disdat$PV_dis == 1)){ ## BEINF Beta Inflated
+    SUM0 <- sum(disdat$PV_dis == 0)
+    SUM1 <- sum(disdat$PV_dis == 1)
+    Beta_InfMod <<- gamlss(PV_dis ~ x, data = disdat, family = BEINF)
+    list(Beta_InfMod$mu.coefficients,
+         Beta_InfMod$sigma.coefficients,
+         Beta_InfMod$nu.coefficients,
+         Beta_InfMod$tau.coefficients, SUM0 = SUM0, SUM1 = SUM1)
+  }else if(any(disdat$PV_dis == 0)){      ## BEINF0 Beta Inflated zero
+    SUM0 <- sum(disdat$PV_dis == 0)
+    Beta_0Inf <<- gamlss(PV_dis ~ x, data = disdat, family = BEINF0)
+    list(Beta_0Inf$mu.coefficients,
+         Beta_0Inf$sigma.coefficients,
+         Beta_0Inf$nu.coefficients, SUM0 = SUM0, SUM1 = 0)
+  }else if(any(disdat$PV_dis == 1)){     ## BEINF1 Beta Inflated one
+    SUM1 <- sum(disdat$PV_dis == 1)
+    Beta_1Inf <- gamlss(PV_dis ~ x, data = disdat, family = BEINF1)
+    list(Beta_1Inf$mu.coefficients,
+         Beta_1Inf$sigma.coefficients,
+         Beta_1Inf$nu.coefficients, SUM0 = 0, SUM1 = SUM1)
+  }else{                                 ## Regular beta regression
+    BetaMod <- betareg(PV_dis ~ x, data = disdat,
+                       link.phi = "identity", link = "logit")
+    list(BetaMod$coefficients, SUM0 = 0, SUM1 = 0)
+  }
+}
+```
+
+# 3. Calculate ROC and compute MSE
+# for each of the 1,000(100) data sets generated under Scenario 1, I obtain the regression coefficients using the three different methods.
+
+```{r}
+
+PDF_coefs <- sapply(dats, PDF_FUN, t = t, simplify = FALSE)
+Beta_coefs <- sapply(dats, Beta_FUN, t = t, simplify = FALSE)
+InfBeta_coefs <- sapply(dats, InfBeta_FUN, t = t, simplify = FALSE)
+
+# histograms of the counts of PVs that are zero from the 1,000 data sets.
+
+# get number of PVS that are 0 and 1 for each data set
+getNums <- function(coefs, SUM0, SUM1){
+  coefs <- unlist(coefs)
+  coefs[c(SUM0, SUM1)]
+}
+
+PVs_0and1 <- sapply(Beta_coefs, getNums, "SUM0", "SUM1")
+df_PVs <- data.frame(t(PVs_0and1))
+
+# histogram of PVs = 0
+ggplot(df_PVs, aes(SUM0)) +
+  geom_histogram()
+
+# histogram of PVs = 1
+ggplot(df_PVs, aes(SUM1))  +
+  geom_histogram(bins = 6)
+
+# Determine the difference between the estimator of the covarariate-specific ROC curve and the true ROC curve, I calculate the MSE (defined in the 2011 paper)
+
+# TRUE ROC(t) values for t = 0, 1/50, ..., 1.
+T_vals <- mapply(true_binormal_ROC, t = c(0, t, 1), 
+X0 = rep(c(0, t, 1), each = length(t) + 2),
+MoreArgs = list(c1 = 2, d1 = 4, sd1 = 1.5, c0 = 1.5, d0 = 3, sd0 = 1.5))
+                               
+# MSE wrapper function
+wrapper <- function(coef_vals, ROC_fun){
+  mapply(ROC_fun, t = c(0, t, 1), X_val = rep(c(0, t, 1), each = length(t) + 2),
+         MoreArgs = list(coef_vals))
+}
+
+# function to get PDF ROC for particular t and X_val
+binorm_ROC <- function(coefs, t, X_val){
+  coefs <- unlist(coefs)
+  ga_1 <- coefs[[1]]
+  ga_2 <- coefs[[2]]
+  Be <- coefs[[3]]
+  pnorm(ga_1 + ga_2 * qnorm(t) + Be * X_val)
+}
+
+PDF_vals <- sapply(PDF_coefs, wrapper, ROC_fun = binorm_ROC)
+
+MSE_PDF <- apply(PDF_vals, 2, function(x) sum((x - T_vals)^2)/n_T^2)
+summary(MSE_PDF) 
+
+# function to get Beta ROC for particular t and X_val
+Beta_ROC <- function(coefs, t, X_val){
+  coefs <- unlist(coefs)
+  Be_hat0 <- coefs[[1]]
+  Be_hat1 <- coefs[[2]]
+  phi_hat <- coefs[[3]]
+  
+  a_hat <- phi_hat/(1 + exp(-Be_hat0 -X_val * Be_hat1))
+  b_hat <- phi_hat * (1 - 1/(1 + exp(-Be_hat0 -X_val * Be_hat1)))
+  pbeta(t, a_hat, b_hat)
+}
+
+Be_vals <- sapply(Beta_coefs, wrapper, ROC_fun = Beta_ROC)
+
+MSE_Be <- apply(Be_vals, 2, function(x) sum((x - T_vals)^2)/n_T^2)
+summary(MSE_Be)
+
+# function to get Inf Beta ROC for particular t and X_val
+InfBeta_ROC <- function(coefs, t, X_val){
+  coefs <- unlist(coefs)
+  
+  if(coefs["SUM0"] > 0 | coefs["SUM1"] > 0){ ## BEINF/BEINF0/BEINF1
+    mu.c1 <- coefs[[1]]
+    mu.c2 <- coefs[[2]]
+    mu <- 1 / (1 + exp(-mu.c1 - X_val * mu.c2))
+    sig.c <- coefs[[3]]
+    sig <- 1 / (1 + exp(-sig.c))
+    nu.c <- coefs[[4]]
+    nu <- exp(nu.c)
+    if(coefs["SUM0"] > 0 & coefs["SUM1"] > 0){ ## BEINF cdf
+      tau.c <- coefs[[5]]
+      tau <- exp(tau.c)
+      pBEINF(t, mu, sig, nu, tau)
+    }else if(coefs["SUM0"] > 0){               ## BEINF0 cdf
+      pBEINF0(t, mu, sig, nu)
+    }else if(coefs["SUM1"] > 0){               ## BEINF1 cdf
+      pBEINF1(t, mu, sig, nu)
+    } 
+  }else{                                       ## Beta cdf
+    Be_hat0 <- coefs[[1]]
+    Be_hat1 <- coefs[[2]]
+    phi_hat <- coefs[[3]]
+    
+    a_hat <- phi_hat/(1 + exp(-Be_hat0 -X_val * Be_hat1))
+    b_hat <- phi_hat * (1 - 1/(1 + exp(-Be_hat0 -X_val * Be_hat1)))
+    pbeta(t, a_hat, b_hat)
+  }
+}
+
+outputInf <- sapply(InfBeta_coefs, wrapper, ROC_fun = InfBeta_ROC)
+MSE_Inf <- apply(outputInf, 2, function(x) sum((x - T_vals)^2)/n_T^2)
+summary(MSE_Inf)
+
+```
+
+# Boxplots of the MSE values for each method
+
+```{r}
+datMSE <- data.frame(MSE = c(MSE_PDF, MSE_Be, MSE_Inf), 
+type = c(rep("PDF", length(MSE_PDF)), rep("Beta", length(MSE_Be)),
+rep("InfBeta", length(MSE_Inf))))
+
+ggplot(datMSE, aes(type, MSE)) +
+  geom_boxplot()
+
+## Repeat process of finding the ROCs and MSEs for 1,000 data sets except this time under Scenario 2, where the two populations are considerably separated.
+
+# generate 1,000 data sets  # chnaged to 100
+dats2 <- replicate(100, gen_Norm_data(1.5, 3, 1.5, 200, 3, 6, 1.5, 200), 
+simplify = FALSE)
+
+# ROC regression coefficients for multiple datasets
+PDF_coefs2 <- sapply(dats2, PDF_FUN, t = t, simplify = FALSE)
+Beta_coefs2 <- sapply(dats2, Beta_FUN, t = t, simplify = FALSE)
+InfBeta_coefs2 <- sapply(dats2, InfBeta_FUN, t = t)
+
+PVs_0and1_2 <- sapply(Beta_coefs2, getNums, "SUM0", "SUM1")
+df_PVs2 <- data.frame(t(PVs_0and1_2))
+
+# histogram of PVs = 0
+ggplot(df_PVs2, aes(SUM0)) +
+  geom_histogram()
+
+# histogram of PVs = 1
+ggplot(df_PVs2, aes(SUM1))  +
+  geom_histogram(bins = 3)
+
+# TRUE ROC(t) values for t = 0, 1/50, ..., 1.
+T_vals2 <- mapply(true_binormal_ROC, t = c(0, t, 1), X0 = rep(c(0, t, 1), 
+each = length(t) + 2), 
+MoreArgs = list(c1 = 3, d1 = 6, sd1 = 1.5, c0 = 1.5, d0 = 3, sd0 = 1.5))
+
+PDF_vals2 <- sapply(PDF_coefs2, wrapper, ROC_fun = binorm_ROC)
+
+MSEs2 <- apply(PDF_vals2, 2, function(x) sum((x - T_vals2)^2)/n_T^2)
+summary(MSEs2)
+
+outputBe2 <- sapply(Beta_coefs2, wrapper, ROC_fun = Beta_ROC)
+
+MSE_Bes2 <- apply(outputBe2, 2, function(x) sum((x - T_vals2)^2)/n_T^2)
+summary(MSE_Bes2)
+
+outputInf2 <- sapply(InfBeta_coefs2, wrapper, ROC_fun = InfBeta_ROC)
+MSE_Inf2 <- apply(outputInf2, 2, function(x) sum((x - T_vals2)^2)/n_T^2)
+summary(MSE_Inf2)
+
+# Boxplots of the MSE values for each method
+
+datMSE <- data.frame(MSE = c(MSE_PDF, MSE_Be, MSE_Inf), 
+type = c(rep("PDF", length(MSE_PDF)), rep("Beta", length(MSE_Be)),
+rep("InfBeta", length(MSE_Inf))))
+
+ggplot(datMSE, aes(type, MSE)) +
+  geom_boxplot()
+```
+
+#Application using the South African Heaert Disease Data
+
+```{r, warning=FALSE}
+
+# load packages
+library("tidyverse"); theme_set(theme_classic())
+library("pROC")
+library("quantreg")
+library("betareg")
+
+# load data
+dat <- read.csv("SAHeart_Disease.csv")
+dat$row.names <- NULL
+dat$famhist <- ifelse(dat$famhist == "Present", 1, 0) %>% factor()
+
+# Empirical AUC of ldl
+roc(dat$chd, dat$ldl)
+
+# selecting variables for ROC regression
+dat_mod <- dplyr::select(dat, chd, age, ldl, famhist, tobacco)
+
+n_T <- 50
+t <- seq(1/n_T, (n_T - 1)/n_T, 1/n_T) # set of FPRs
+
+# 1. PDF ROC on SA chd data set
+PDF_fun <- function(data, t){
+  df0 <- filter(data, chd == 0)
+  df1 <- filter(data, chd == 1)
+  
+  n1 <- nrow(df1)
+  # quantile regression to estimate reference survival
+  qr0 <- rq(ldl ~ famhist + age + tobacco, data = df0, tau = t)
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <- predict.rq(qr0, newdata = df1)
+  
+  Inv_t <- qnorm(rev(t))  # normal quantiles of FPRs
+  nq <- length(t)         # number of quantiles
+  
+  # reshaping the data
+  t_pred1 <- t(pred1)
+  col_pred1 <- c(t_pred1)
+  col_t <- rep(Inv_t, n1)
+  col_ldl <- rep(df1$ldl, each = nq)
+  col_age <- rep(df1$age, each = nq)
+  col_tobacco <- rep(df1$tobacco, each = nq)
+  col_famhist <- rep(df1$famhist, each = nq)
+  col_uit <- as.numeric(col_ldl >= col_pred1)
+  
+  probitData <- data.frame(fdbar = col_pred1, phiInv = col_t,
+                           ldl = col_ldl, age = col_age,
+                           tobacco = col_tobacco, famhist = col_famhist,
+                           uit = col_uit)
+  probMod <- glm(uit ~ phiInv + famhist + age + tobacco, 
+                 family = binomial(link = "probit"), data = probitData)
+  summary(probMod)
+}
+
+coefs_PDF <- PDF_fun(dat_mod, t = t)$coefficients[,1]   # coefficients
+coefs_PDF
+
+# bootstrapping SEs
+B <- 100    #changed to 100
+results <- matrix(NA ,nrow = B, ncol = 5)
+for(b in 1:B){
+  boot_dat <- dat_mod[sample(nrow(dat_mod), nrow(dat_mod),
+                             replace = TRUE),]
+  results[b,] <- PDF_fun(boot_dat, t = t)$coefficients[,2]
+}
+
+colMeans(results) # Bootstrap SEs for coefficients
+
+# get z statistics and p-values
+get_sigs <- function(estimate, std_error){
+  z <- estimate / std_error
+  c(z, ifelse(z > 0, pnorm(z, lower.tail = FALSE) * 2,
+         pnorm(z) * 2))
+}
+map2(.x = coefs_PDF,
+     .y = colMeans(results), get_sigs)
+
+# Estimate of AUC: age = 45, famhist = 1, tobacco = 5
+pnorm((coefs_PDF[1] + coefs_PDF[3] + coefs_PDF[4] * 45 +
+         coefs_PDF[5] * 5)/sqrt(1 + coefs_PDF[2]^2))
+
+# 2. Beta ROC on SA chd data set
+
+# function that transforms PVs, so they're in the open unit interval
+dep_trans_betareg <- function(y){
+  n_obs <- sum(!(is.na(y)))
+  (y * (n_obs - 1) + 0.5) / n_obs
+}
+
+Beta_FUN <- function(data, t){
+  df0 <- filter(data, chd == 0)
+  df1 <- filter(data, chd == 1)
+  
+  Y_ldl <- pull(df1, ldl)
+  n1 <- nrow(df1)
+  
+  # quantile regression to estimate reference survival
+  qr0 <<- rq(ldl ~ famhist + age + tobacco, data = df0, tau = t) 
+  
+  # covariate adjusted survival for diseased observations
+  pred1 <<- predict.rq(qr0, newdata = df1)
+  t_pred1 <- t(pred1)
+  pred3 <- lapply(seq_len(ncol(t_pred1)), function(i) t_pred1[,i])
+  PV_dis <<- mapply(function(x, y) mean(x >= y), x = pred3, y = Y_ldl) 
+  datdis <<- data.frame(Y_ldl, age = df1$age, 
+                        famhist = df1$famhist, tobacco = df1$tobacco,
+                        PV_dis)
+  
+  if(any(datdis$PV_dis == 0 | datdis$PV_dis == 1)){ # transform PVs if any are 0 or 1
+    SUM0 <- sum(datdis$PV_dis == 0)
+    SUM1 <- sum(datdis$PV_dis == 1)
+    BetaMod <<- betareg(dep_trans_betareg(PV_dis) ~ famhist + age + tobacco, 
+                       data = datdis,
+                       link.phi = "identity", link = "logit")
+    
+    BetaMod$coefficients
+  }else{
+    BetaMod <- betareg(PV_dis ~ famhist + age + tobacco, data = datdis,
+                       link.phi = "identity", link = "logit")
+    
+    BetaMod$coefficients
+  }
+}
+
+coefs_Be <- Beta_FUN(dat_mod, t = t)    # coefficients
+coefs_Be
+
+# function to get Beta AUC
+Beta_AUC <- function(coefs, X_val = matrix(c(1, 1, 45, 5), nrow = 4)){
+  coefs <- unlist(coefs)
+  Be_hat0 <- coefs[[1]]
+  Be_hat_fh <- coefs[[2]]
+  Be_hat_age <- coefs[[3]]
+  Be_hat_tob <- coefs[[4]]
+  phi_hat <- coefs[[5]]
+  
+  Be <- matrix(c(Be_hat0, Be_hat_fh, Be_hat_age,
+                 Be_hat_tob), ncol = 4)
+  
+  a_hat <- phi_hat/(1 + exp(-Be %*% X_val))
+  b_hat <- phi_hat * (1 - 1/(1 + exp(-Be %*% X_val)))
+  # pbeta(t, a_hat, b_hat)    ## ROC
+  1 - a_hat / (a_hat + b_hat) ## AUC
+}
+
+Beta_AUC(coefs_Be)
+
+# Plotting ROC curves for PDF method and Beta method
+
+Beta_ROC <- function(coefs, t, X_val = matrix(c(1, 1, 45, 5), nrow = 4)){
+  coefs <- unlist(coefs)
+  Be_hat0 <- coefs[[1]]
+  Be_hat_fh <- coefs[[2]]
+  Be_hat_age <- coefs[[3]]
+  Be_hat_tob <- coefs[[4]]
+  phi_hat <- coefs[[5]]
+  
+  Be <- matrix(c(Be_hat0, Be_hat_fh, Be_hat_age,
+                 Be_hat_tob), ncol = 4)
+  
+  a_hat <- phi_hat/(1 + exp(-Be %*% X_val))
+  b_hat <- phi_hat * (1 - 1/(1 + exp(-Be %*% X_val)))
+  
+  pbeta(t, a_hat, b_hat)    ## ROC
+}
+
+binorm_ROC <- function(coefs, t, X_val = matrix(c(1, 45, 5), nrow = 3)){
+  ga_1 <- coefs[1]
+  ga_2 <- coefs[2]
+  Be <- coefs[c(3, 4, 5)] %>% matrix %>% t
+  
+  pnorm(ga_1 + ga_2 * qnorm(t) + c(Be %*% X_val))
+}
+
+# plot of ROC curves
+ggplot(data.frame(t = c(0, 1)), aes(t)) +
+  stat_function(fun = binorm_ROC, args = list(coefs = coefs_PDF)) + 
+  stat_function(fun = Beta_ROC, args = list(coefs = coefs_Be),
+                color = "red") + 
+  ylab("ROC(t)")
+```
