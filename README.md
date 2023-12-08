@@ -1,4 +1,5 @@
 ### Hi there 👋
+I’m looking to collaborate with Bel Zhang and John Seaman on issues related to historical borrowing in clinical studies.
 
 <!--
 **JACKTUBBS5/JACKTUBBS5** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
