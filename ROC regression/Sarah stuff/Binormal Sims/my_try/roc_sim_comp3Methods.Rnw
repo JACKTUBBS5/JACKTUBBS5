@@ -1,0 +1,526 @@
+\documentclass[10pt, title page]{article}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  %%%%%%%%%% load packages                          %%%%%%%%%%
+  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  \usepackage{rotating, graphicx, overpic, wrapfig, psfrag, amsfonts, 
+    amsmath, amssymb, amsthm, color, fullpage, url, natbib, caption, 
+    subcaption, authblk, color, hyperref, bm, blkarray, array, fullpage,
+    latexsym, booktabs, enumerate, setspace, enumitem}
+\usepackage[boxed]{algorithm2e}
+
+  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  %%%%%%%%%% include macros and set colors          %%%%%%%%%%
+  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  \input{macros}
+
+
+\title{\LARGE {Binormal Example 2} \\ \vspace{.5 cm} {Parametric, Beta, Semiparametric} }
+\author{Sarah Stanley}
+\date{\today}
+
+\begin{document}
+
+\section{Binormal Example 2}
+Data simulated from $Y_D = 2 + 4X + \epsilon_D$ and $Y_{\bar{D}} = 1.5 + 3X + \epsilon_{\bar{D}},$ where $X \sim U(0,1)$ and $\epsilon_D, \epsilon_{\bar{D}} \sim N(0,1.5^2).$  In the following, we include the resulting ROC curves from each of the Parametric, Beta, and Semiparametric methods for specified values of the covariate X as well as the corresponding AUCs.
+\subsection{Parametric Method}
+
+
+
+<< fig.height = 3, include = T, echo = F, warning = F, message = F>>=
+setwd("C:/Users/Sarah/Desktop/Box Sync/Box Sync")
+#setwd("~/Box Sync") 
+library(ROCRegression)
+library(ggplot2)
+library(quantreg)
+library(foreign)
+library(betareg)
+
+
+# normal data generation
+set.seed(2)
+z <- runif(100, 0, 1)
+yDis <- sapply(z, function(x) rnorm(1, 2 + 4*x, (1.5)))
+yRef <- sapply(z, function(x) rnorm(1, 1.5 + 3*x,( 1.5)))
+
+
+binorm.ref <- data.frame(cbind("y" = yRef, "x" = z))
+binorm.dis <- data.frame(cbind("y" = yDis,"x" = z))
+
+# specifying set of false positive rates
+FPR <- (1:99/100)
+
+# quantile regression to estimate reference survival
+qr1 <- rq(y ~ x, data=binorm.ref, tau = FPR )
+#coef(qr1)
+pred1 <- predict.rq(qr1)
+
+pred1means <- colMeans(pred1) # calculating mean predicted values for each quantile
+
+Inv.t <- qnorm(FPR)   # calculating inverse normal of FPRs
+
+nq <- length(Inv.t)     # number of quantiles
+nd <- nrow(binorm.dis)  # number of diseased points
+
+
+
+# calculating placement values for each diseased point
+pv <- rep(.0001, nd)  # if diseased point larger than predicted, default to .9999
+
+
+# If working as intended, pv[1] = .85 for this example because binorm.dis$y[1] = 1.48
+for (i in 1:nd){
+  for(j in 1:(nq - 1)){
+    if( binorm.dis$y[i] > pred1means[j] && binorm.dis$y[i] <= pred1means[j+1]){
+      pv[i] <- 1 - .01*j
+    }
+    if(binorm.dis$y[i] < pred1means[1]){
+      pv[i] <- .9999
+    }
+    
+  } #end j 
+} # end i
+
+################################ using B.hat instead of dat (as of 8/11/2016)
+# B.hat is an indicator that we will use in conditional expectation
+
+t <- matrix(, nrow = nd, ncol = nq)
+Bhat <- NULL
+phi.inv <- NULL
+xDis <- NULL; yDis <- NULL
+
+# calculating indicator B.hat and creating a matrix "t" with identical columns (inv-norm of t)
+B.hat <- matrix(, nrow = nd, ncol = nq)
+for (j in 1:nq){
+  for(i in 1:nd){
+    B.hat[i,j] <- (pv[i] <= FPR[j])*1
+    t[i,j] <- Inv.t[j]
+  }
+}
+
+# reorganizing into a matrix with four columns -- prep for probit regression
+for(i in 1:nd){
+  Bhat <- append(Bhat, B.hat[i,])
+  phi.inv <- append(phi.inv, t[i,])
+  xDis <- append(xDis, rep(binorm.dis$x[i], nq))
+  yDis <- append(yDis, rep(binorm.dis$y[i], nq))
+}
+temp <-data.frame(cbind(Bhat = Bhat, phiInv = phi.inv, x = xDis, y = yDis))
+
+probitMod <- glm(Bhat ~ phiInv + x, family = binomial(link = "probit"), data = temp)
+#summary(probitMod)
+
+##### Plotting the ROC
+x <- seq(.5, .8, by = .1)
+s <- seq( 0.001, 0.999, by = .005)
+
+alphaHat <- probitMod$coefficients[1] + 0*x
+betaHat <- probitMod$coefficients[2] + 0*x
+theta <- probitMod$coefficients[3] + 0*x
+
+dfParam <- data.frame(cbind(x, alphaHat, betaHat, theta ))
+quant <- qnorm(s, 0, 1)
+#ROC <- pnorm(1*alphaHat + betaHat*quant - theta*x, 0,1)
+
+ROC <- matrix(0, length(s), length(x))
+for(i in 1:length(x)){
+  ROC[,i] <- pnorm(1*alphaHat[1] + betaHat[1]*quant + theta[1]*x[i], 0,1) 
+}
+
+# reshaping data
+ROC.long <- c(ROC)
+s.long <- rep(s, length(x))
+dfParam <- dfParam[rep(seq_len(nrow(dfParam)), each = length(s)),]
+dfParam$ROC <- ROC.long
+dfParam$s <- s.long
+dfParam$x <- as.factor(dfParam$x)
+dfParamP <- dfParam
+
+# Function to calculate AUC estimates
+auc <- function(data, factor){
+  data2 <- subset(data, x == factor)
+  meanROC <- NULL; dt <- NULL; pAUC <- NULL; AUC <- NULL;
+  t <- data2$s
+  dt[1] <- t[1]
+  meanROC[1] <- data2$ROC[1]/2
+  pAUC[1] <- dt[1]*meanROC[1]
+  AUC[1] <- pAUC[1]
+  
+  for (i in 2:nrow(data2)){
+    dt[i] <-  t[i] - t[i-1]
+    meanROC[i] <- (data2$ROC[i] + data2$ROC[i-1])/2
+    pAUC[i] <- dt[i]*meanROC[i]
+    AUC[i] <- AUC[i-1] + pAUC[i] 
+  }
+  (AUC_PVest <- AUC[nrow(data2)])
+  
+}
+
+# Vector of covariate values for which we want AUC estimates
+covVec <- seq(.5,.8, by = 0.1)
+
+# calculating AUC for specified values of covariate X
+aucVecAP2 <- sapply(covVec, function(x) auc(dfParamP, x))
+@
+
+<<fig.height = 3, include = T, echo = T, warning = F>>=
+############ output for alonzo
+ggplot(dfParamP, aes(s, ROC)) + geom_line() + facet_grid(.~x) + theme_bw() + 
+  labs(title = "Parametric ROC for Specified Covariate Values") + 
+  theme(axis.text=element_text(size=8), 
+        panel.margin = unit(1, "lines"), plot.title = element_text(size=12)) + 
+  scale_x_continuous(name="t", breaks=seq(0,1,.5))
+
+round(aucVecAP2,4)
+
+summary(probitMod)$coefficients
+@
+
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Beta Method}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+<< fig.height = 3, include = F, echo = FALSE>>=
+
+# normal data generation
+set.seed(2)
+z <- runif(100, 0, 1)
+yDis <- sapply(z, function(x) rnorm(1, 2 + 4*x, (1.5)))
+yRef <- sapply(z, function(x) rnorm(1, 1.5 + 3*x,( 1.5)))
+
+
+binorm.ref <- data.frame(cbind("y" = yRef, "x" = z))
+binorm.dis <- data.frame(cbind("y" = yDis,"x" = z))
+
+# specifying set of false positive rates
+FPR <- (1:99/100)
+ 
+# quantile regression to estimate reference survival
+qr1 <- rq(y ~ x, data=binorm.ref, tau = FPR )
+coef(qr1)
+pred1 <- predict.rq(qr1)
+
+pred1means <- colMeans(pred1) # calculating mean predicted values for each quantile
+
+nq <- length(FPR)     # number of quantiles
+nd <- nrow(binorm.dis)  # number of diseased points
+
+##################################################
+
+pv <- rep(.0001, nd)  # if diseased point larger than predicted, default to .9999
+
+for (i in 1:nd){
+  for(j in 1:(nq - 1)){
+    if( binorm.dis$y[i] > pred1means[j] && binorm.dis$y[i] <= pred1means[j+1]){
+      pv[i] <- 1 - .01*j
+    }
+    if(binorm.dis$y[i] < pred1means[1]){
+      pv[i] <- .9999
+    }
+    
+  } #end j 
+} # end i
+
+temp <-data.frame(cbind(binorm.dis, pv))
+
+BetaModel <- betareg(pv~x, data = temp)
+summary(BetaModel)
+
+
+# specifying covariate values
+x <- seq(.5, .8, by = .1)
+s <- seq(0.001, 0.999, by = .005)
+
+intercept <- BetaModel$coefficients$mean[1]
+cov1 <- BetaModel$coefficients$mean[2]
+scale <- BetaModel$coefficients$precision
+
+# calculating mu, omega, and tau
+mu <- 1/(1 + exp(-intercept - cov1*x))
+omega = mu*scale
+tau = (1 - mu)* scale
+
+dfParam <- data.frame(cbind(x, mu, omega, tau ))
+
+
+#calculating ROC values
+ROC <- matrix(0, length(s), length(x))
+for(i in 1:length(x)){
+  ROC[,i] <- pbeta(s, dfParam$omega[i], dfParam$tau[i] )
+}
+
+# reshaping data
+ROC.long <- c(ROC)
+s.long <- rep(s, length(x))
+dfParam <- dfParam[rep(seq_len(nrow(dfParam)), each = length(s)),]
+dfParam$ROC <- ROC.long
+dfParam$s <- s.long
+dfParam$x <- as.factor(dfParam$x)
+dfParamB <- dfParam
+
+# Function to calculate AUC estimates
+auc <- function(data, factor){
+  data2 <- subset(data, x == factor)
+  meanROC <- NULL; dt <- NULL; pAUC <- NULL; AUC <- NULL;
+  t <- data2$s
+  dt[1] <- t[1]
+  meanROC[1] <- data2$ROC[1]/2
+  pAUC[1] <- dt[1]*meanROC[1]
+  AUC[1] <- pAUC[1]
+  
+  for (i in 2:nrow(data2)){
+    dt[i] <-  t[i] - t[i-1]
+    meanROC[i] <- (data2$ROC[i] + data2$ROC[i-1])/2
+    pAUC[i] <- dt[i]*meanROC[i]
+    AUC[i] <- AUC[i-1] + pAUC[i] 
+  }
+  (AUC_PVest <- AUC[nrow(data2)])
+  
+}
+
+covVec <- seq(.5,.8, by = 0.1)
+
+# calculating AUC for specified values of covariate X
+aucVecBeta2 <- sapply(covVec, function(x) auc(dfParamB, x))
+
+@
+
+<< fig.height = 3, include = T, echo = FALSE>>=
+# output for Beta Method
+
+ggplot(dfParamB, aes(s, ROC)) + geom_line() + facet_grid(.~x) + theme_bw() + 
+  labs(title = "Beta ROC for Specified Covariate Values") + theme(axis.text=element_text(size=8), panel.margin = unit(1, "lines"), plot.title = element_text(size=12)) + scale_x_continuous(name="t", breaks=seq(0,1,.5))
+
+round(aucVecBeta2, 4)
+
+summary(BetaModel)$coefficients
+@
+
+
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Semiparametric Method}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+<< fig.height = 3, include = F, echo = FALSE>>=
+# normal data generation
+set.seed(2)
+z <- runif(100, 0, 1)
+yDis <- sapply(z, function(x) rnorm(1, 2 + 4*x, (1.5)))
+yRef <- sapply(z, function(x) rnorm(1, 1.5 + 3*x,( 1.5)))
+
+
+binorm.ref <- data.frame(cbind("y" = yRef, "x" = z))
+binorm.dis <- data.frame(cbind("y" = yDis,"x" = z))
+
+# specifying set of false positive rates
+FPR <- (1:99/100)
+ 
+# quantile regression to estimate reference survival
+qr1 <- rq(y ~ x, data=binorm.ref, tau = FPR )
+coef(qr1)
+pred1 <- predict.rq(qr1)
+
+pred1means <- colMeans(pred1) # calculating mean predicted values for each quantile
+
+nq <- length(FPR)     # number of quantiles
+nd <- nrow(binorm.dis)  # number of diseased points
+
+
+#######################################################
+# calculating placement values
+#######################################################
+pv <- rep(.0001, nd)  # if diseased point larger than predicted, default to .9999
+
+for (i in 1:nd){
+  for(j in 1:(nq - 1)){
+    if( binorm.dis$y[i] > pred1means[j] && binorm.dis$y[i] <= pred1means[j+1]){
+      pv[i] <- 1 - .01*( j)
+    }
+    if(binorm.dis$y[i] < pred1means[1]){
+      pv[i] <- .9999
+    }
+    
+  } #end j 
+} # end i
+
+##########################################
+# Calculating B.hat for expectation
+##########################################
+
+B.hat <- matrix(, nrow = nd, ncol = nq)
+for (j in 1:nq){
+  for(i in 1:nd){
+    B.hat[i,j] <- (pv[i] <= FPR[j])*1
+  }
+}
+#########################################
+temp <-data.frame(cbind(binorm.dis, pv))
+
+# Calculating pairwise differences of placement values
+# "combn" function calculates row 2 - row 1, so take the negative to get row 1 - row2; store in pvDiff
+pvComb <- combn(pv,2)
+pvDiff <- -combn(pv, 2, diff)
+
+# Calculating covariate differences
+xDiff <- -combn(temp$x, 2, diff)
+
+BinPV <- (pvDiff <= 0)*1  # if the difference is less than or equal to 0, we have a 1
+
+# verifying that this works how we think it does
+pvComb[,1:10]
+pvDiff[1:10]
+BinPV[1:10]
+
+
+# storing binary and covariate difference vectors in a new data frame 
+temp2 <- data.frame(cbind(BinPV, xDiff))
+
+
+# First call to GLM to estimate the Betas
+probitMod1 <- glm((BinPV) ~ xDiff - 1 , family = binomial(link = "probit"), data = temp2) # No intercept
+summary(probitMod1)
+beta.hat <- probitMod1$coefficients #* sqrt(2)
+
+
+# Second call to GLM to estimate h0(t) -- note the offset term
+xPbeta <- beta.hat*binorm.dis$x
+h0 <- apply((B.hat),2,function(s){
+  glm(s ~ + offset(xPbeta), family = binomial(link = "probit"))$coefficient[1]
+})
+
+
+# Compute.ROC takes covariates values of interest, FPR, a set of t values, and the betaHat coefficient from glm
+Compute.ROC <- function(cov.data = seq(0,1, by = .2), FPRvec = FPR, tVec = FPR, betaCoef = beta.hat){
+  
+  xPbetaROC <- cov.data * (betaCoef)
+  
+  h <- approxfun(FPRvec, h0)(tVec)  # we can evaluate this function at any set of t's, we just chose FPR 
+  ROC <- sapply(1:length(tVec), function(s) pnorm(h[s] + 
+                                                    xPbetaROC))
+  if (is.vector(ROC)) 
+    ROC <- matrix(ROC, nrow = 1)
+  if (length(ROC) > 1) 
+    colnames(ROC) <- paste("p", round(tVec, 3), sep = "")
+  list(h,ROC)
+}
+ROC.727 <- Compute.ROC(cov.data = seq(.5,.8, by = .1), 
+                       FPRvec = FPR, tVec = seq(0.01,.99, by = .01), 
+                       betaCoef = beta.hat)
+
+########### Reshaping Data for ROC plot  
+tVec = seq(0.01,.99, by = .01)
+xseq <- seq(.5, .8, by = 0.1)  # should match the cov.data from Compute.ROC function above
+
+newROC <- t(ROC.727[[2]])
+newROC.long <- c(newROC)
+t.long <- rep(tVec, length(xseq))
+x.long <- rep(xseq, each = length(tVec))
+
+ROCdata <- data.frame(cbind(ROC = newROC.long, t = t.long, x = x.long, factor.x = as.factor(x.long)))
+
+
+########### Calculating the AUC
+auc <- function(data, factor){
+  #data <- dfParam
+  #factor = .2
+  data2 <- subset(data, x == factor)
+  meanROC <- NULL; dt <- NULL; pAUC <- NULL; AUC <- NULL;
+  t <- data2$t
+  dt[1] <- t[1]
+  meanROC[1] <- data2$ROC[1]/2
+  pAUC[1] <- dt[1]*meanROC[1]
+  AUC[1] <- pAUC[1]
+  
+  for (i in 2:nrow(data2)){
+    dt[i] <-  t[i] - t[i-1]
+    meanROC[i] <- (data2$ROC[i] + data2$ROC[i-1])/2
+    pAUC[i] <- dt[i]*meanROC[i]
+    AUC[i] <- AUC[i-1] + pAUC[i] 
+  }
+  (AUC_PVest <- AUC[nrow(data2)])
+  
+}
+
+covVec <- seq(.5,.8, by = 0.1)  # needs to match the covariate data specified in the compute.roc function
+
+@
+
+<<fig.height = 3, include = T, echo = T>>=
+
+# calculating AUC for specified values of covariate X
+aucVecSemi2 <- sapply(covVec, function(x) auc(ROCdata, x))
+
+
+truth <- sapply(covVec, function(x) pnorm((.5 + x)/sqrt(4.5)))
+
+results <- data.frame("Truth" = truth, "Parametric" = aucVecAP2, "Semiparametric" = aucVecSemi2, "Beta" = aucVecBeta2)
+
+
+
+label_names <- (c('1' = "0.5", '2' = "0.6", '3' = "0.7", '4' = "0.8"))
+ggplot(ROCdata, aes(t, ROC)) + geom_line() + facet_grid(.~factor.x, labeller = as_labeller(label_names)) + labs(title = "SemiParametric ROC for Specified Covariate Values") + 
+ theme(axis.text=element_text(size=8), panel.margin = unit(1, "lines"), plot.title = element_text(size=12)) + scale_x_continuous(name="t", breaks=seq(0,1,.5)) +
+  theme_bw()
+
+round(aucVecSemi2,4)
+
+summary(probitMod1)$coefficients
+@
+
+
+\newpage
+\subsection{Plot Comparison}
+
+<<fig.height = 4, include = T, echo = F>>=
+#ggplot(dfParamB, aes(s, ROC)) + geom_line() + facet_grid(.~x) + theme_bw() + 
+#  labs(title = "Beta ROC for Specified Covariate Values") + theme(axis.text=element_text(size=8), panel.margin = unit(1, "lines"), plot.title = element_text(size=12)) + scale_x_continuous(name="t", breaks=seq(0,1,.5))
+
+dfParamP$label <- rep("P", dim(dfParamP)[1])
+dfParamP2 <- data.frame( "ROC" = dfParamP$ROC, "t" = dfParamP$s, "x" = dfParamP$x, "label" = dfParamP$label)
+
+dfParamB$label <- rep("B", dim(dfParamB)[1])
+dfParamB2 <- data.frame( "ROC" = dfParamB$ROC, "t" = dfParamB$s, "x" = dfParamB$x, "label" = dfParamB$label)
+
+ROCdata$label <- rep("S", dim(ROCdata)[1])
+ROCdata2 <- ROCdata[,-4]
+
+
+FullPlot <- rbind(dfParamP2, ROCdata2, dfParamB2)
+
+Full5 <- FullPlot[ which(FullPlot$x=='0.5'),] #subsetting for covariate val of 0.5
+Full6 <- FullPlot[ which(FullPlot$x=='0.6'),] #subsetting for covariate val of 0.6
+Full7 <- FullPlot[ which(FullPlot$x=='0.7'),] #subsetting for covariate val of 0.7
+Full8 <- FullPlot[ which(FullPlot$x=='0.8'),] #subsetting for covariate val of 0.8
+
+FullPlot2 <- rbind(Full5, Full6, Full7, Full8)
+@
+
+<<fig.height = 4, include = T, echo = T>>=
+
+round(aucVecAP2,4)
+round(aucVecSemi2, 4)
+round(aucVecBeta2, 4)
+
+ggplot(FullPlot2, aes(x=FullPlot2$t, y=FullPlot2$ROC, group=label)) + 
+  facet_grid(.~x) +
+ geom_line(aes(colour = label), lwd = 1) + 
+  theme_bw() + labs(title = "ROC for Specified Covariate Values") + 
+  theme(axis.text=element_text(size=15), panel.margin = unit(1.5, "lines"), 
+        plot.title = element_text(size=14),
+        strip.text.x = element_text(size = 10),
+        legend.title= element_text(size = 10),
+        legend.text = element_text(size = 10),
+        text = element_text(size = 10)) + 
+  scale_x_continuous(name="t", breaks=seq(0,1,.5)) + 
+  scale_y_continuous(name="")+
+  scale_colour_discrete(name = "Method", labels = c("Parametric", "Semiparametric", "Beta"))
+
+
+
+
+@
+
+
+\end{document}
